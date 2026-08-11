@@ -1,0 +1,6 @@
+@Origami.Identity.Api.Core_HostAddress = http://localhost:5191
+
+GET {{Origami.Identity.Api.Core_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
