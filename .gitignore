@@ -51,9 +51,3 @@ _ReSharper*/
 ################################################################################
 
 publish/
-
-################################################################################
-# Configuracion local con secretos (usar appsettings.Example.json como plantilla)
-################################################################################
-
-Origami.Identity.ApiCore/appsettings.json
