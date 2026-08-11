@@ -1,4 +1,4 @@
-namespace Origami.Identity.Api.Core.Infrastructure.Security.Response
+﻿namespace Origami.Identity.Api.Core.Infrastructure.Security.Response
 {
     public class UploadFileResponseDto
     {

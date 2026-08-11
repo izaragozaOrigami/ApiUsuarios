@@ -1,103 +1,78 @@
-<body style="background-color: #f2f3f8;">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenido a gpFleet</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f4f4; font-family: Arial, Helvetica, sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f4; padding:20px 0;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff; border:1px solid #e0e0e0; border-radius:4px;">
+                    <!-- Logo -->
+                    <tr>
+                        <td align="center" style="padding:30px 20px; border-bottom:1px solid #e0e0e0;">
+                            <img src="https://lalademosite.azurewebsites.net/assets/img/logo-gpfleet.svg" alt="gpFleet" style="max-width:220px; height:auto; display:block;">
+                        </td>
+                    </tr>
 
-  <!-- start preheader -->
-    <div class="preheader" style="display: none; max-width: 0; max-height: 0; overflow: hidden; font-size: 1px; line-height: 1px; color: #fff; opacity: 0;">
-        Bienvenido a Flota Danone
-    </div>
-  <!-- end preheader -->
+                    <!-- Título -->
+                    <tr>
+                        <td align="center" style="padding:30px 20px 10px 20px;">
+                            <h1 style="margin:0; font-family: 'Courier New', Courier, monospace; font-size:32px; color:#000000;">Bienvenido</h1>
+                        </td>
+                    </tr>
 
-  <!-- start body -->
-  <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <!-- Cuerpo -->
+                    <tr>
+                        <td align="center" style="padding:10px 40px; color:#333333; font-size:15px; line-height:1.6;">
+                            <p style="margin:10px 0;">{0}</p>
+                            <p style="margin:10px 0;">
+                                Tu registro al sistema gpFleet se creó exitosamente, ahora deberás
+                                acceder mediante el siguiente link para confirmar tu registro.
+                            </p>
+                        </td>
+                    </tr>
 
-      <!-- start logo -->
-      <tr>
-          <td align="center" bgcolor="#fff">
-              <!--[if (gte mso 9)|(IE)]>
-            <table align="center" border="0" cellpadding="0" cellspacing="0" width="600">
-            <tr>
-            <td align="center" valign="top" width="600">
-            <![endif]-->
-              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; border: 1px solid #C3D3E2; border-radius: 10px">
-                  <tr>
-                      <td align="center" bgcolor="#ffffff" valign="top" style="padding: 36px 24px; border-bottom: 1px solid #C3D3E2;">
-                              <a href="https://origamibucket.blob.core.windows.net/origamiusersimages/20250509T062605364_svgviewer-png-output.png" target="_blank" style="display: inline-block;">
-                                  <img src="https://origamibucket.blob.core.windows.net/origamiusersimages/20250509T062605364_svgviewer-png-output.png" alt="SNIC 2024" style="height: 41px;">
-                              </a>
-                      </td>
-                  </tr>
-                  <tr>
-                      <td align="left" bgcolor="#ffffff" style="padding: 36px 24px 0; font-family: 'Verdana', Geneva, sans-serif; ">
-                          <h1 style="margin: 0; font-size: 32px; text-align: center; font-weight: 600; letter-spacing: -1px; line-height: 48px; color: #0A1847;">Bienvenido</h1>
-                      </td>
-                  </tr>
-                  <!-- start copy -->
-                  <tr>
-                      <td align="left" bgcolor="#ffffff" style="padding: 24px; font-family: 'Verdana', Geneva, sans-serif; font-size: 16px; line-height: 24px;text-align: center; color: #0A1847">
-                          <p style="margin: 0; color: #0A1847">{0}</p>
-                          <p style="margin: 0; color: #0A1847">Tu registro al sistema Flota Danone se creado exitosamente, ahora deberás acceder mediante el siguiente link para confirmar tu registro.</p>
-                      </td>
-                  </tr>
-                  <!-- end copy -->
-                  <!-- start button -->
-                  <tr>
-                      <td align="left" bgcolor="#ffffff">
-                          <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                              <tr>
-                                  <td align="center" bgcolor="#ffffff" style="padding: 12px;">
-                                      <table border="0" cellpadding="0" cellspacing="0">
-                                          <tr>
-                                              <a href="{2}" target="_blank"
-                                              <td align="center" style="border-radius: 0px;">
-                                                  <p style="display: inline-block; padding: 12px 16px; font-family: 'Verdana', Geneva, sans-serif; font-size: 16px; background-color: #4A8CE3; color: #fff; text-decoration: none; border-radius: 6px; letter-spacing: 5px;">Confirmar Registro</p>
-                                              </td>
-                                              </a>
-                                             
-                                          </tr>
-                                      </table>
-                                  </td>
-                              </tr>
-                          </table>
-                      </td>
-                  </tr>
-                  <!-- end button -->
-                  <!-- start copy -->
-                  <tr>
-                      <td align="left" bgcolor="#ffffff" style="padding: 24px; font-family: 'Verdana', Geneva, sans-serif; font-size: 16px; line-height: 24px;text-align: center; color: #0A1847">
-                          <p style="margin: 0; color: #0A1847">Datos de acceso:</p>
-                          <p style="margin: 0; color: #0A1847">Usuario {3}</p>
-                          <p style="margin: 0; color: #0A1847">Contraseña {1}</p>
-                      </td>
-                  </tr>
-                  <!-- end copy -->
+                    <!-- Botón -->
+                    <tr>
+                        <td align="center" style="padding:20px;">
+                            <a href="{2}"
+                               style="display:inline-block;
+                                      background-color:#F58220;
+                                      color:#ffffff;
+                                      text-decoration:none;
+                                      padding:14px 36px;
+                                      border-radius:6px;
+                                      font-size:16px;
+                                      font-weight:bold;
+                                      letter-spacing:2px;">
+                                Confirmar Registro
+                            </a>
+                        </td>
+                    </tr>
 
-                  <tr>
-                      <td align="center" bgcolor="#ffffff" style="padding: 24px;">
-                          <!--[if (gte mso 9)|(IE)]>
-            <table align="center" border="0" cellpadding="0" cellspacing="0" width="600">
-            <tr>
-            <td align="center" valign="top" width="600">
-            <![endif]-->
-                          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <!-- Datos de acceso -->
+                    <tr>
+                        <td align="center" style="padding:20px 40px; color:#333333; font-size:15px; line-height:1.6;">
+                            <p style="margin:5px 0;">Datos de acceso:</p>
+                            <p style="margin:5px 0;">Usuario {3}</p>
+                            <p style="margin:5px 0;">Contraseña {1}</p>
+                        </td>
+                    </tr>
 
-                              <!-- start permission -->
-                              <tr>
-                                  <td align="center" bgcolor="#ffffff" style="padding: 12px 24px; font-family: 'Verdana', Geneva, sans-serif; font-size: 10px; line-height: 16px; color: #666;">
-                                      <p style="margin: 0;">Recibió este correo electrónico porque recibimos una solicitud de Registro de usuario para su cuenta. Si no solicitó Registro de usuario, puede eliminar este correo electrónico de manera segura.</p>
-                                  </td>
-                              </tr>
-                              <!-- end permission -->
-
-                          </table>
-                          <!--[if (gte mso 9)|(IE)]>
+                    <!-- Aviso legal -->
+                    <tr>
+                        <td align="center" style="padding:25px 40px 30px 40px; border-top:1px solid #e0e0e0; color:#666666; font-size:13px; line-height:1.5;">
+                            Recibió este correo electrónico porque recibimos una solicitud de
+                            Registro de usuario para su cuenta. Si no solicitó Registro de usuario,
+                            puede eliminar este correo electrónico de manera segura.
+                        </td>
+                    </tr>
+                </table>
             </td>
-            </tr>
-            </table>
-            <![endif]-->
-                      </td>
-                  </tr>
-                  <!-- end footer -->
-
-              </table>
-  <!-- end body -->
-
+        </tr>
+    </table>
 </body>
+</html>

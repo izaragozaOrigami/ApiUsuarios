@@ -107,7 +107,7 @@ namespace Origami.Identity.Api.Controllers
             }
             string[] roles = new string[createUserModel.Roles.Count() + createUserModel.RolesFijos.Count() + 1];
             roles[0] = defaultRole.Name;
-                   
+
             int roleIndex = 1;
             foreach (Role rol in createUserModel.Roles)
             {
@@ -136,7 +136,7 @@ namespace Origami.Identity.Api.Controllers
             string body = await System.IO.File.ReadAllTextAsync(filePath);
             body = string.Format(body, user.FirstName + " " + user.LastName, createUserModel.Password, callbackUrl, user.Email);
             await _emailService.SendEmailAsync(user.Email, "Confirma tu registro", body);
-            return CreatedAtRoute("GetUserById", new { id = user.Id },  user);
+            return CreatedAtRoute("GetUserById", new { id = user.Id }, user);
         }
 
         [AllowAnonymous]
@@ -272,7 +272,7 @@ namespace Origami.Identity.Api.Controllers
                 return Unauthorized("Credenciales Invalidas");
             }
 
-           
+
 
         }
 
@@ -332,12 +332,12 @@ namespace Origami.Identity.Api.Controllers
         {
             // Crear o obtener el UserManager
             // TODO ASP.NET Identity debe reemplazarse por la identidad de ASP.NET Core. Para obtener más información, consulte https://docs.microsoft.com/aspnet/core/migration/identity.
-         //   var userManager = new UserManager<ApplicationUser>(new UserStore<ApplicationUser>(new ApplicationDbContext()));
+            //   var userManager = new UserManager<ApplicationUser>(new UserStore<ApplicationUser>(new ApplicationDbContext()));
 
 
 
             // Obtener el usuario que deseas actualizar
-           // var user = await userManager.FindByIdAsync(request.Id);
+            // var user = await userManager.FindByIdAsync(request.Id);
 
             var user = await _userManager.FindByIdAsync(request.Id);
             //    userManager.AddToRole(request.Id,);
@@ -353,9 +353,9 @@ namespace Origami.Identity.Api.Controllers
                 user.LockoutEnabled = request.EstatusId;
                 user.Position = request.Position;
 
-             //   IdentityUserRole identityUserRole = new IdentityUserRole();
+                //   IdentityUserRole identityUserRole = new IdentityUserRole();
 
-               // var rolesActuales = userManager.GetRoles(request.Id);
+                // var rolesActuales = userManager.GetRoles(request.Id);
                 var rolesActuales = await _userManager.GetRolesAsync(user);
 
                 //var context = new ApplicationDbContext();
@@ -366,7 +366,7 @@ namespace Origami.Identity.Api.Controllers
 
 
 
-              //  SecurityData securityData = new SecurityData();
+                //  SecurityData securityData = new SecurityData();
                 List<CBU> cBUs = _securityData.GetUserAccesibility(user.Id);
 
 
@@ -395,7 +395,7 @@ namespace Origami.Identity.Api.Controllers
 
                     }
 
-                  //  var defaultRole = this.AppRoleManager.FindByName("BasicAuthorization");
+                    //  var defaultRole = this.AppRoleManager.FindByName("BasicAuthorization");
 
                     var defaultRole = await _roleManager.FindByNameAsync("BasicAuthorization");
                     //string[] roles = new string[request.Roles.Count() + request.RolesFijos.Count() + 1];
@@ -411,7 +411,7 @@ namespace Origami.Identity.Api.Controllers
                         if (initialRole != null)
                             roles.Add(initialRole.Name);
 
-                       // roles[roleIndex] = initialRole.Name;
+                        // roles[roleIndex] = initialRole.Name;
                         roleIndex++;
                     }
 
@@ -428,7 +428,7 @@ namespace Origami.Identity.Api.Controllers
                         roleIndex++;
                     }
                     IdentityResult roleResult = null;
-                  //  roleResult = await this.AppUserManager.AddToRolesAsync(user.Id, roles);
+                    //  roleResult = await this.AppUserManager.AddToRolesAsync(user.Id, roles);
                     roleResult = await _userManager.AddToRolesAsync(user, roles);
 
                     request.Roles = new List<Role>();
@@ -545,7 +545,7 @@ namespace Origami.Identity.Api.Controllers
         [Route("GetAccesibility")]
         public IActionResult GetAccesibility()
         {
-          //  SecurityData securityData = new SecurityData();
+            //  SecurityData securityData = new SecurityData();
             List<CBU> cBUs = _securityData.GetAccesibility();
             AccebilityResponse accebilityResponse = new AccebilityResponse();
             accebilityResponse.countAccesibility = cBUs.Count.ToString();
@@ -625,7 +625,7 @@ namespace Origami.Identity.Api.Controllers
             //string hashedNewPassword = this.AppUserManager.PasswordHasher.HashPassword(newPassword);
 
 
-         //  var hashedNewPassword= await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+            //  var hashedNewPassword= await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
 
             if (user != null)
             {
@@ -819,5 +819,5 @@ namespace Origami.Identity.Api.Controllers
 
     }
 
-  
+
 }
