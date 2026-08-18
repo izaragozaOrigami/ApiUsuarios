@@ -8,6 +8,15 @@ namespace Origami.Identity.Api.Core.Infrastructure
         public int IdModulo { get; set; }
         public string Titulo { get; set; }
         public int IdAccion { get; set; }
+
+        /// <summary>
+        /// Permisos que cuelgan de este permiso, a cualquier profundidad.
+        /// </summary>
+        /// <remarks>
+        /// Mismo motivo que ActionItem.Acciones: el arbol de sesion tampoco sabia bajar
+        /// del cuarto nivel y perdia los bloques del Paso 2 de Edicion.
+        /// </remarks>
+        public List<Permiso> SubPermisos { get; set; } = new List<Permiso>();
     }
 
     public class Pantalla

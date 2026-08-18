@@ -1726,6 +1726,311 @@
             return response;
         }
 
+        #region Armado del arbol de modulos
+
+        // ---------------------------------------------------------------------------
+        // EL ARBOL SE ARMA POR PARENTESCO, NO POR IdTypeModulo.
+        //
+        // Antes habia CINCO copias del mismo bloque de cuatro bucles anidados que
+        // filtraban por igualdad literal del tipo:
+        //
+        //     Select("IdTypeModulo = 100")
+        //     Select("IdTypeModulo = 200 AND IdParentModulo = ...")
+        //     Select("IdTypeModulo = 300 AND IdParentModulo = ...")
+        //     Select("IdTypeModulo = 400 AND IdParentModulo = ...")
+        //
+        // Eso ponia un techo de cuatro niveles en el CODIGO, no en los datos:
+        // dbo.ModuloType declara un quinto tipo (500 SubAcciones) y dbo.Modulo tiene
+        // diez nodos que lo usan -- entre ellos los siete bloques del Paso 2 de Edicion
+        // (51..57), que son los que Daniel no podia conceder. Ninguno se dibujaba, y sin
+        // error: Select() devolvia cero filas y el bucle no iteraba.
+        //
+        // Tambien exigia que el tipo declarado casara con la posicion real. Cuando no
+        // casaba -- siete pantallas de Inventario estaban tipadas como Accion -- la rama
+        // entera desaparecia.
+        //
+        // AHORA la jerarquia sale de IdParentModulo, que es la unica que la base
+        // garantiza, y la recursion no tiene tope. IdTypeModulo queda como METADATO
+        // descriptivo: se sigue leyendo y devolviendo, pero ya no decide la forma del
+        // arbol. Recolocar un nivel deja de poder borrar una rama.
+        //
+        // Se comprobo contra FlotasDev que los diez nodos con IdParentModulo NULL son
+        // exactamente los diez de tipo 100, que no hay ciclos y que los 186 nodos son
+        // alcanzables desde una raiz. Aun asi la recursion lleva guarda anticiclos,
+        // porque este codigo corre en el login y un ciclo seria caida del proceso.
+        // ---------------------------------------------------------------------------
+
+        private static readonly List<DataRow> NoChildren = new List<DataRow>();
+
+        /// <summary>
+        /// Agrupa las filas por su padre en UNA pasada, respetando el orden en que el
+        /// procedimiento las devolvio -- que es su ORDER BY, y es el orden en que se
+        /// pintan.
+        /// </summary>
+        private static Dictionary<int, List<DataRow>> IndexByParent(DataTable table, out List<DataRow> roots)
+        {
+            Dictionary<int, List<DataRow>> byParent = new Dictionary<int, List<DataRow>>();
+            roots = new List<DataRow>();
+
+            foreach (DataRow row in table.Rows)
+            {
+                int? parent = row.Field<int?>("IdParentModulo");
+
+                if (!parent.HasValue)
+                {
+                    roots.Add(row);
+                    continue;
+                }
+
+                List<DataRow> siblings;
+                if (!byParent.TryGetValue(parent.Value, out siblings))
+                {
+                    siblings = new List<DataRow>();
+                    byParent[parent.Value] = siblings;
+                }
+
+                siblings.Add(row);
+            }
+
+            return byParent;
+        }
+
+        private static List<DataRow> ChildrenOf(Dictionary<int, List<DataRow>> byParent, DataRow row)
+        {
+            List<DataRow> children;
+            return byParent.TryGetValue(row.Field<int>("IdModulo"), out children) ? children : NoChildren;
+        }
+
+        /// <summary>
+        /// Lee la columna Status si viene, y de cualquier forma en que venga.
+        /// </summary>
+        /// <remarks>
+        /// Es lo que permite que las cinco variantes compartan un solo armador. Cada
+        /// @View de Usp_security_GetModuleNew la devuelve distinta: la 1 manda la
+        /// CADENA 'false', las demas mandan un bit. Y antes la variante del catalogo
+        /// completo ni la leia: ponia Permisson = false a mano. Con esto las tres
+        /// situaciones dan el mismo resultado que daban.
+        /// </remarks>
+        private static bool ReadGranted(DataRow row)
+        {
+            if (!row.Table.Columns.Contains("Status"))
+            {
+                return false;
+            }
+
+            object value = row["Status"];
+
+            if (value == null || value == DBNull.Value)
+            {
+                return false;
+            }
+
+            if (value is bool flag)
+            {
+                return flag;
+            }
+
+            bool parsed;
+            return bool.TryParse(Convert.ToString(value), out parsed) && parsed;
+        }
+
+        /// <summary>
+        /// Lee una fecha solo si la consulta la trajo. Las vigencias solo vienen en la
+        /// vista de permisos especiales; en las demas la columna no existe y queda nula,
+        /// que es lo que devolvian antes.
+        /// </summary>
+        private static DateTime? ReadOptionalDate(DataRow row, string columnName)
+        {
+            return row.Table.Columns.Contains(columnName) ? row.Field<DateTime?>(columnName) : null;
+        }
+
+        /// <summary>
+        /// Arma el arbol que consume la pantalla de permisos por rol.
+        /// </summary>
+        /// <remarks>
+        /// Los tres primeros niveles conservan las clases que ya existian -- modulo,
+        /// submodulo y vista -- porque son el contrato con el FRONT. Del cuarto hacia
+        /// abajo todo es ActionItem anidado, que es lo unico marcable y ahora no tiene
+        /// tope de profundidad.
+        /// </remarks>
+        private static List<RolesAccionAlta> BuildRoleModuleTree(DataTable table)
+        {
+            List<RolesAccionAlta> result = new List<RolesAccionAlta>();
+
+            List<DataRow> roots;
+            Dictionary<int, List<DataRow>> byParent = IndexByParent(table, out roots);
+
+            foreach (DataRow rowModule in roots)
+            {
+                RolesAccionAlta module = new RolesAccionAlta
+                {
+                    IdModule = rowModule.Field<int>("IdModulo"),
+                    NameModulo = rowModule.Field<string>("NombreModulo"),
+                    Modules = new List<Submodule>()
+                };
+
+                foreach (DataRow rowSubmodule in ChildrenOf(byParent, rowModule))
+                {
+                    Submodule submodule = new Submodule
+                    {
+                        NameSubmodulo = rowSubmodule.Field<string>("NombreModulo"),
+                        Vistas = new List<Views>()
+                    };
+
+                    foreach (DataRow rowView in ChildrenOf(byParent, rowSubmodule))
+                    {
+                        Views view = new Views
+                        {
+                            ViewName = rowView.Field<string>("NombreModulo"),
+                            Acciones = BuildActions(byParent, rowView, new HashSet<int>())
+                        };
+
+                        submodule.Vistas.Add(view);
+                    }
+
+                    module.Modules.Add(submodule);
+                }
+
+                result.Add(module);
+            }
+
+            return result;
+        }
+
+        private static List<ActionItem> BuildActions(
+            Dictionary<int, List<DataRow>> byParent,
+            DataRow parentRow,
+            HashSet<int> ancestors)
+        {
+            List<ActionItem> actions = new List<ActionItem>();
+
+            foreach (DataRow row in ChildrenOf(byParent, parentRow))
+            {
+                int idModulo = row.Field<int>("IdModulo");
+
+                // Guarda anticiclos. dbo.Modulo no tiene llave foranea de IdParentModulo
+                // contra si misma, asi que nada en la base impide que un nodo acabe
+                // siendo su propio ancestro. Hoy no ocurre -- verificado--, pero esto
+                // corre en cada login: un ciclo seria recursion infinita y caida del
+                // proceso, no un login fallido. Se lleva el camino, no el conjunto
+                // global, para no perder nodos repetidos que sean hermanos legitimos.
+                if (!ancestors.Add(idModulo))
+                {
+                    continue;
+                }
+
+                ActionItem action = new ActionItem
+                {
+                    Name = row.Field<string>("NombreModulo"),
+                    IdAction = idModulo,
+                    Permisson = ReadGranted(row),
+                    StartDate = ReadOptionalDate(row, "InitialDate"),
+                    EndDate = ReadOptionalDate(row, "FinalDate"),
+                    Acciones = BuildActions(byParent, row, ancestors)
+                };
+
+                actions.Add(action);
+                ancestors.Remove(idModulo);
+            }
+
+            return actions;
+        }
+
+        /// <summary>
+        /// Arma el arbol de sesion que viaja en la respuesta del login.
+        /// </summary>
+        /// <remarks>
+        /// Es la misma recursion por parentesco que BuildRoleModuleTree, sobre las clases
+        /// de Hierarchy.cs y sobre las columnas de Usp_Security_Modulo_GET @View=3, que
+        /// nombra el titulo TitleModulo y no NombreModulo.
+        ///
+        /// Esa vista devuelve solo los modulos relacionados con el usuario, asi que el
+        /// subconjunto puede no traer a todos los descendientes. No es problema: lo que
+        /// no viene, no se recorre.
+        /// </remarks>
+        private static List<Modulo> BuildSessionTree(DataTable table)
+        {
+            List<Modulo> result = new List<Modulo>();
+
+            List<DataRow> roots;
+            Dictionary<int, List<DataRow>> byParent = IndexByParent(table, out roots);
+
+            foreach (DataRow rowModule in roots)
+            {
+                Modulo modulo = new Modulo
+                {
+                    IdModulo = rowModule.Field<int>("IdModulo"),
+                    Nombre = rowModule.Field<string>("TitleModulo")
+                };
+
+                foreach (DataRow rowSubmodule in ChildrenOf(byParent, rowModule))
+                {
+                    Submodulo submodulo = new Submodulo
+                    {
+                        IdModulo = rowSubmodule.Field<int>("IdModulo"),
+                        Nombre = rowSubmodule.Field<string>("TitleModulo")
+                    };
+
+                    foreach (DataRow rowScreen in ChildrenOf(byParent, rowSubmodule))
+                    {
+                        Pantalla pantalla = new Pantalla
+                        {
+                            IdModulo = rowScreen.Field<int>("IdModulo"),
+                            Nombre = rowScreen.Field<string>("TitleModulo")
+                        };
+
+                        pantalla.Permisos = BuildSessionPermissions(byParent, rowScreen, new HashSet<int>());
+                        submodulo.Pantallas.Add(pantalla);
+                    }
+
+                    modulo.Submodulos.Add(submodulo);
+                }
+
+                result.Add(modulo);
+            }
+
+            return result;
+        }
+
+        private static List<Permiso> BuildSessionPermissions(
+            Dictionary<int, List<DataRow>> byParent,
+            DataRow parentRow,
+            HashSet<int> ancestors)
+        {
+            List<Permiso> permisos = new List<Permiso>();
+
+            foreach (DataRow row in ChildrenOf(byParent, parentRow))
+            {
+                int idModulo = row.Field<int>("IdModulo");
+
+                if (!ancestors.Add(idModulo))
+                {
+                    continue;
+                }
+
+                int idAccion;
+
+                Permiso permiso = new Permiso
+                {
+                    IdModulo = idModulo,
+                    Titulo = row.Field<string>("TitleModulo"),
+                    // DescriptionModulo casi nunca es un numero -- suele repetir el titulo
+                    // --, asi que esto da 0 la mayoria de las veces. Se conserva tal cual
+                    // estaba: cambiarlo seria otra decision, y no es la de este arreglo.
+                    IdAccion = int.TryParse(row.Field<string>("DescriptionModulo"), out idAccion) ? idAccion : 0
+                };
+
+                permiso.SubPermisos = BuildSessionPermissions(byParent, row, ancestors);
+
+                permisos.Add(permiso);
+                ancestors.Remove(idModulo);
+            }
+
+            return permisos;
+        }
+
+        #endregion
+
         public List<RolesAccionAlta> GetAllModulesNew()
         {
             List<RolesAccionAlta> ListRolesAccionAlta = new List<RolesAccionAlta>();
@@ -1756,54 +2061,10 @@
 
                 reader.Close();
                 command.Dispose();
-                //RolesAccionAlta
-                DataRow[] filteredRowsModulo = tablaDatos.Select("IdTypeModulo = 100");
-
-                List<ModulePermisson> modulePermissonsList = new List<ModulePermisson>();
-
-                foreach (DataRow rowModulo in filteredRowsModulo)
-                {
-
-                    RolesAccionAlta rolesAccionAlta = new RolesAccionAlta();
-                    rolesAccionAlta.IdModule = rowModulo.Field<int>("IdModulo");
-                    rolesAccionAlta.NameModulo = rowModulo.Field<string>("NombreModulo");
-
-
-
-                    DataRow[] filteredRowsSubmdulos = tablaDatos.Select("IdTypeModulo = 200 AND IdParentModulo = " + rowModulo.Field<int>("IdModulo").ToString());
-                    List<Submodule> submodulesList = new List<Submodule>();
-                    foreach (DataRow rowSubmodulo in filteredRowsSubmdulos)
-                    {
-                        Submodule submodule = new Submodule();
-                        submodule.NameSubmodulo = rowSubmodulo.Field<string>("NombreModulo");
-
-                        DataRow[] filteredRowsView = tablaDatos.Select("IdTypeModulo = 300 AND IdParentModulo = " + rowSubmodulo.Field<int>("IdModulo").ToString());
-                        List<Views> viewList = new List<Views>();
-                        foreach (DataRow rowView in filteredRowsView)
-                        {
-                            Views views = new Views();
-                            views.ViewName = rowView.Field<string>("NombreModulo");
-
-                            DataRow[] filteredRowsAccions = tablaDatos.Select("IdTypeModulo = 400 AND IdParentModulo = " + rowView.Field<int>("IdModulo").ToString());
-                            List<ActionItem> actionsList = new List<ActionItem>();
-                            foreach (DataRow rowAction in filteredRowsAccions)
-                            {
-                                ActionItem actions = new ActionItem();
-                                actions.Name = rowAction.Field<string>("NombreModulo");
-                                actions.IdAction = rowAction.Field<int>("IdModulo");
-                                actions.Permisson = false;
-                                actionsList.Add(actions);
-                            }
-                            views.Acciones = actionsList;
-                            viewList.Add(views);
-
-                        }
-                        submodule.Vistas = viewList;
-                        submodulesList.Add(submodule);
-                    }
-                    rolesAccionAlta.Modules = submodulesList;
-                    ListRolesAccionAlta.Add(rolesAccionAlta);
-                }
+                // El catalogo completo no marca nada: un rol nuevo nace sin permisos.
+                // La vista 1 devuelve Status como la cadena 'false', y ReadGranted la
+                // interpreta como falso, que es lo que este metodo ponia a mano.
+                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
 
             }
             catch (Exception ex)
@@ -1865,59 +2126,8 @@
 
                 reader.Close();
                 command.Dispose();
-                //RolesAccionAlta
-                DataRow[] filteredRowsModulo = tablaDatos.Select("IdTypeModulo = 100");
-
-                List<ModulePermisson> modulePermissonsList = new List<ModulePermisson>();
-
-                foreach (DataRow rowModulo in filteredRowsModulo)
-                {
-
-                    RolesAccionAlta rolesAccionAlta = new RolesAccionAlta();
-                    rolesAccionAlta.IdModule = rowModulo.Field<int>("IdModulo");
-                    rolesAccionAlta.NameModulo = rowModulo.Field<string>("NombreModulo");
-
-
-
-                    DataRow[] filteredRowsSubmdulos = tablaDatos.Select("IdTypeModulo = 200 AND IdParentModulo = " + rowModulo.Field<int>("IdModulo").ToString());
-                    List<Submodule> submodulesList = new List<Submodule>();
-                    foreach (DataRow rowSubmodulo in filteredRowsSubmdulos)
-                    {
-                        Submodule submodule = new Submodule();
-                        submodule.NameSubmodulo = rowSubmodulo.Field<string>("NombreModulo");
-
-                        DataRow[] filteredRowsView = tablaDatos.Select("IdTypeModulo = 300 AND IdParentModulo = " + rowSubmodulo.Field<int>("IdModulo").ToString());
-                        List<Views> viewList = new List<Views>();
-                        foreach (DataRow rowView in filteredRowsView)
-                        {
-                            Views views = new Views();
-                            views.ViewName = rowView.Field<string>("NombreModulo");
-
-                            DataRow[] filteredRowsAccions = tablaDatos.Select("IdTypeModulo = 400 AND IdParentModulo = " + rowView.Field<int>("IdModulo").ToString());
-                            List<ActionItem> actionsList = new List<ActionItem>();
-                            foreach (DataRow rowAction in filteredRowsAccions)
-                            {
-                                ActionItem actions = new ActionItem();
-                                actions.Name = rowAction.Field<string>("NombreModulo");
-                                actions.IdAction = rowAction.Field<int>("IdModulo");
-                                if (actions.IdAction.Equals(28))
-                                {
-                                    var test = 1;
-                                }
-                                var dato = rowAction.Field<bool>("Status");
-                                actions.Permisson = dato;
-                                actionsList.Add(actions);
-                            }
-                            views.Acciones = actionsList;
-                            viewList.Add(views);
-
-                        }
-                        submodule.Vistas = viewList;
-                        submodulesList.Add(submodule);
-                    }
-                    rolesAccionAlta.Modules = submodulesList;
-                    ListRolesAccionAlta.Add(rolesAccionAlta);
-                }
+                // Status viene como bit en estas vistas y lo lee ReadGranted.
+                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
 
             }
             catch (Exception ex)
@@ -1978,59 +2188,8 @@
 
                 reader.Close();
                 command.Dispose();
-                //RolesAccionAlta
-                DataRow[] filteredRowsModulo = tablaDatos.Select("IdTypeModulo = 100");
-
-                List<ModulePermisson> modulePermissonsList = new List<ModulePermisson>();
-
-                foreach (DataRow rowModulo in filteredRowsModulo)
-                {
-
-                    RolesAccionAlta rolesAccionAlta = new RolesAccionAlta();
-                    rolesAccionAlta.IdModule = rowModulo.Field<int>("IdModulo");
-                    rolesAccionAlta.NameModulo = rowModulo.Field<string>("NombreModulo");
-
-
-
-                    DataRow[] filteredRowsSubmdulos = tablaDatos.Select("IdTypeModulo = 200 AND IdParentModulo = " + rowModulo.Field<int>("IdModulo").ToString());
-                    List<Submodule> submodulesList = new List<Submodule>();
-                    foreach (DataRow rowSubmodulo in filteredRowsSubmdulos)
-                    {
-                        Submodule submodule = new Submodule();
-                        submodule.NameSubmodulo = rowSubmodulo.Field<string>("NombreModulo");
-
-                        DataRow[] filteredRowsView = tablaDatos.Select("IdTypeModulo = 300 AND IdParentModulo = " + rowSubmodulo.Field<int>("IdModulo").ToString());
-                        List<Views> viewList = new List<Views>();
-                        foreach (DataRow rowView in filteredRowsView)
-                        {
-                            Views views = new Views();
-                            views.ViewName = rowView.Field<string>("NombreModulo");
-
-                            DataRow[] filteredRowsAccions = tablaDatos.Select("IdTypeModulo = 400 AND IdParentModulo = " + rowView.Field<int>("IdModulo").ToString());
-                            List<ActionItem> actionsList = new List<ActionItem>();
-                            foreach (DataRow rowAction in filteredRowsAccions)
-                            {
-                                ActionItem actions = new ActionItem();
-                                actions.Name = rowAction.Field<string>("NombreModulo");
-                                actions.IdAction = rowAction.Field<int>("IdModulo");
-                                if (actions.IdAction.Equals(28))
-                                {
-                                    var test = 1;
-                                }
-                                var dato = rowAction.Field<bool>("Status");
-                                actions.Permisson = dato;
-                                actionsList.Add(actions);
-                            }
-                            views.Acciones = actionsList;
-                            viewList.Add(views);
-
-                        }
-                        submodule.Vistas = viewList;
-                        submodulesList.Add(submodule);
-                    }
-                    rolesAccionAlta.Modules = submodulesList;
-                    ListRolesAccionAlta.Add(rolesAccionAlta);
-                }
+                // Status viene como bit en estas vistas y lo lee ReadGranted.
+                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
 
             }
             catch (Exception ex)
@@ -2093,59 +2252,8 @@
 
                 reader.Close();
                 command.Dispose();
-                //RolesAccionAlta
-                DataRow[] filteredRowsModulo = tablaDatos.Select("IdTypeModulo = 100");
-
-                List<ModulePermisson> modulePermissonsList = new List<ModulePermisson>();
-
-                foreach (DataRow rowModulo in filteredRowsModulo)
-                {
-
-                    RolesAccionAlta rolesAccionAlta = new RolesAccionAlta();
-                    rolesAccionAlta.IdModule = rowModulo.Field<int>("IdModulo");
-                    rolesAccionAlta.NameModulo = rowModulo.Field<string>("NombreModulo");
-
-
-
-                    DataRow[] filteredRowsSubmdulos = tablaDatos.Select("IdTypeModulo = 200 AND IdParentModulo = " + rowModulo.Field<int>("IdModulo").ToString());
-                    List<Submodule> submodulesList = new List<Submodule>();
-                    foreach (DataRow rowSubmodulo in filteredRowsSubmdulos)
-                    {
-                        Submodule submodule = new Submodule();
-                        submodule.NameSubmodulo = rowSubmodulo.Field<string>("NombreModulo");
-
-                        DataRow[] filteredRowsView = tablaDatos.Select("IdTypeModulo = 300 AND IdParentModulo = " + rowSubmodulo.Field<int>("IdModulo").ToString());
-                        List<Views> viewList = new List<Views>();
-                        foreach (DataRow rowView in filteredRowsView)
-                        {
-                            Views views = new Views();
-                            views.ViewName = rowView.Field<string>("NombreModulo");
-
-                            DataRow[] filteredRowsAccions = tablaDatos.Select("IdTypeModulo = 400 AND IdParentModulo = " + rowView.Field<int>("IdModulo").ToString());
-                            List<ActionItem> actionsList = new List<ActionItem>();
-                            foreach (DataRow rowAction in filteredRowsAccions)
-                            {
-                                ActionItem actions = new ActionItem();
-                                actions.Name = rowAction.Field<string>("NombreModulo");
-                                actions.IdAction = rowAction.Field<int>("IdModulo");
-                                if (actions.IdAction.Equals(28))
-                                {
-                                    var test = 1;
-                                }
-                                var dato = rowAction.Field<bool>("Status");
-                                actions.Permisson = dato;
-                                actionsList.Add(actions);
-                            }
-                            views.Acciones = actionsList;
-                            viewList.Add(views);
-
-                        }
-                        submodule.Vistas = viewList;
-                        submodulesList.Add(submodule);
-                    }
-                    rolesAccionAlta.Modules = submodulesList;
-                    ListRolesAccionAlta.Add(rolesAccionAlta);
-                }
+                // Status viene como bit en estas vistas y lo lee ReadGranted.
+                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
 
             }
             catch (Exception ex)
@@ -3772,61 +3880,10 @@
 
                 reader.Close();
                 command.Dispose();
-                //RolesAccionAlta
-                DataRow[] filteredRowsModulo = tablaDatos.Select("IdTypeModulo = 100");
-
-                List<ModulePermisson> modulePermissonsList = new List<ModulePermisson>();
-
-                foreach (DataRow rowModulo in filteredRowsModulo)
-                {
-
-                    RolesAccionAlta rolesAccionAlta = new RolesAccionAlta();
-                    rolesAccionAlta.IdModule = rowModulo.Field<int>("IdModulo");
-                    rolesAccionAlta.NameModulo = rowModulo.Field<string>("NombreModulo");
-
-
-
-                    DataRow[] filteredRowsSubmdulos = tablaDatos.Select("IdTypeModulo = 200 AND IdParentModulo = " + rowModulo.Field<int>("IdModulo").ToString());
-                    List<Submodule> submodulesList = new List<Submodule>();
-                    foreach (DataRow rowSubmodulo in filteredRowsSubmdulos)
-                    {
-                        Submodule submodule = new Submodule();
-                        submodule.NameSubmodulo = rowSubmodulo.Field<string>("NombreModulo");
-
-                        DataRow[] filteredRowsView = tablaDatos.Select("IdTypeModulo = 300 AND IdParentModulo = " + rowSubmodulo.Field<int>("IdModulo").ToString());
-                        List<Views> viewList = new List<Views>();
-                        foreach (DataRow rowView in filteredRowsView)
-                        {
-                            Views views = new Views();
-                            views.ViewName = rowView.Field<string>("NombreModulo");
-
-                            DataRow[] filteredRowsAccions = tablaDatos.Select("IdTypeModulo = 400 AND IdParentModulo = " + rowView.Field<int>("IdModulo").ToString());
-                            List<ActionItem> actionsList = new List<ActionItem>();
-                            foreach (DataRow rowAction in filteredRowsAccions)
-                            {
-                                ActionItem actions = new ActionItem();
-                                actions.Name = rowAction.Field<string>("NombreModulo");
-                                actions.IdAction = rowAction.Field<int>("IdModulo");
-                                if (actions.IdAction.Equals(28))
-                                {
-                                    var test = 1;
-                                }
-                                var dato = rowAction.Field<bool>("Status");
-                                actions.StartDate = rowAction.Field<DateTime?>("InitialDate"); ;
-                                actions.EndDate = rowAction.Field<DateTime?>("FinalDate"); ;
-                                actions.Permisson = dato;
-                                actionsList.Add(actions);
-                            }
-                            views.Acciones = actionsList;
-                            viewList.Add(views);
-
-                        }
-                        submodule.Vistas = viewList;
-                        submodulesList.Add(submodule);
-                    }
-                    rolesAccionAlta.Modules = submodulesList;
-                    ListRolesAccionAlta.Add(rolesAccionAlta);
-                }
+                // Esta es la unica vista que trae vigencias (InitialDate / FinalDate).
+                // ReadOptionalDate las recoge cuando vienen y las deja nulas cuando no,
+                // que es lo que hacian las otras cuatro variantes.
+                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
 
             }
             catch (Exception ex)
@@ -4250,80 +4307,19 @@
 
 
                 tablaDatos.Load(reader);
-                // Mapear filas a objetos planos para facilitar búsquedas
-                var listaPlanos = tablaDatos.AsEnumerable().Select(row => new
-                {
-                    IdModulo = row.Field<int>("IdModulo"),
-                    IdParentModulo = row.Field<int?>("IdParentModulo"),
-                    TitleModulo = row.Field<string>("TitleModulo"),
-                    DescriptionModulo = row.Field<string>("DescriptionModulo"),
-                    IdTypeModulo = row.Field<int>("IdTypeModulo")
-                }).ToList();
-
-
-
-
-
-
-                foreach (var item in listaPlanos)
-                {
-                    switch (item.IdTypeModulo)
-                    {
-                        case 100: // Módulo
-                            modulos.Add(new Modulo
-                            {
-                                IdModulo = item.IdModulo,
-                                Nombre = item.TitleModulo
-                            });
-                            break;
-
-                        case 200: // Submodulo
-                            var moduloPadre = modulos.FirstOrDefault(m => m.IdModulo == item.IdParentModulo);
-                            if (moduloPadre != null)
-                            {
-                                moduloPadre.Submodulos.Add(new Submodulo
-                                {
-                                    IdModulo = item.IdModulo,
-                                    Nombre = item.TitleModulo
-                                });
-                            }
-                            break;
-
-                        case 300: // Pantalla
-                            foreach (var modulo in modulos)
-                            {
-                                var submoduloPadre = modulo.Submodulos.FirstOrDefault(s => s.IdModulo == item.IdParentModulo);
-                                if (submoduloPadre != null)
-                                {
-                                    submoduloPadre.Pantallas.Add(new Pantalla
-                                    {
-                                        IdModulo = item.IdModulo,
-                                        Nombre = item.TitleModulo
-                                    });
-                                }
-                            }
-                            break;
-
-                        case 400: // Permisos
-                            foreach (var modulo in modulos)
-                            {
-                                foreach (var submodulo in modulo.Submodulos)
-                                {
-                                    var pantallaPadre = submodulo.Pantallas.FirstOrDefault(p => p.IdModulo == item.IdParentModulo);
-                                    if (pantallaPadre != null)
-                                    {
-                                        pantallaPadre.Permisos.Add(new Permiso
-                                        {
-                                            IdModulo = item.IdModulo,
-                                            Titulo = item.TitleModulo,
-                                            IdAccion = int.TryParse(item.DescriptionModulo, out int idAccion) ? idAccion : 0
-                                        });
-                                    }
-                                }
-                            }
-                            break;
-                    }
-                }
+                // Mismo cambio que en BuildRoleModuleTree y por el mismo motivo: la
+                // jerarquia sale de IdParentModulo, no de IdTypeModulo.
+                //
+                // El switch que habia aqui tenia casos 100/200/300/400 y NINGUN default,
+                // asi que todo nodo de tipo 500 se descartaba sin dejar rastro. Y ademas
+                // dependia de que el padre ya estuviera colocado en su nivel: como el
+                // modulo 6 Consulta estaba tipado 400, caia en la bolsa de permisos y sus
+                // seis hijos se quedaban sin donde colgar.
+                //
+                // Esto corre en CADA LOGIN, de todos los usuarios y para todos los
+                // modulos. Por eso la version nueva no lanza: tolera padres que no vengan
+                // en el subconjunto, titulos nulos y ciclos.
+                modulos = BuildSessionTree(tablaDatos);
 
             }
             catch (Exception ex)
