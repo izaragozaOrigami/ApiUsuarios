@@ -212,7 +212,16 @@ namespace Origami.Identity.Api.Core.Data {
                 return ResourceManager.GetString("Usp_Security_PermissonRoles_DEL", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Busca una cadena traducida similar a [dbo].[Usp_Security_PermissonRoles_GETL].
+        /// </summary>
+        internal static string Usp_Security_PermissonRoles_GETL {
+            get {
+                return ResourceManager.GetString("Usp_Security_PermissonRoles_GETL", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Busca una cadena traducida similar a [dbo].[Usp_Security_Permissons].
         /// </summary>

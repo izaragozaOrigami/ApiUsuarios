@@ -1811,6 +1811,147 @@
         /// completo ni la leia: ponia Permisson = false a mano. Con esto las tres
         /// situaciones dan el mismo resultado que daban.
         /// </remarks>
+        /// <summary>
+        /// Lee de dbo.PermissonRoles que TIPOS de permiso tiene un rol, por modulo.
+        /// </summary>
+        /// <remarks>
+        /// Va en una consulta aparte y no como columnas de Usp_security_GetModuleNew a
+        /// proposito: esa vista tiene 307 lineas y cuatro ramas, y reescribirla entera
+        /// para colgarle cinco columnas es mas riesgo que beneficio. Se fusiona al armar
+        /// el arbol, que es donde de todos modos hay que recorrerlo.
+        ///
+        /// Reusa la conexion ya abierta del llamador: es una lectura chica y abrir una
+        /// segunda seria pagar el viaje dos veces.
+        /// </remarks>
+        /// <summary>
+        /// Escribe en dbo.PermissonRoles los tipos de permiso que trae la peticion.
+        /// </summary>
+        /// <remarks>
+        /// La comparte el alta y la edicion porque las dos hacen lo mismo y antes NINGUNA
+        /// lo hacia: las dos llaman a Usp_Security_PermissonRoles_DEL, que vacia
+        /// dbo.PermissonRoles Y dbo.ModuloAccesos para el rol, y despues repoblaban solo
+        /// ModuloAccesos. El rol salia de la pantalla sin un solo tipo de permiso, y
+        /// nadie se enteraba hasta que alguien intentaba usarlo.
+        ///
+        /// Se ignoran las entradas con IdPermiso = 0 -- las de un cliente que no manda el
+        /// tipo -- en vez de escribirlas: una fila con un tipo que no esta en
+        /// dbo.Permisson no la reconoce nadie y solo ensucia.
+        /// </remarks>
+        private static void WriteRolePermissons(
+            SqlConnection connection,
+            SqlTransaction transaction,
+            List<Permisson2> permissons,
+            string roleId)
+        {
+            if (permissons == null || permissons.Count == 0)
+            {
+                return;
+            }
+
+            var rows = permissons
+                .Where(permisson => permisson.IdPermiso > 0)
+                .Select(permisson => new
+                {
+                    IdRol = roleId,
+                    permisson.IdModulo,
+                    IdPermisson = permisson.IdPermiso
+                })
+                .GroupBy(row => new { row.IdRol, row.IdModulo, row.IdPermisson })
+                .Select(group => group.First())
+                .ToList();
+
+            if (rows.Count == 0)
+            {
+                return;
+            }
+
+            using (SqlBulkCopy sbCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.Default, transaction))
+            {
+                sbCopy.ColumnMappings.Add("IdRol", "IdRol");
+                sbCopy.ColumnMappings.Add("IdModulo", "IdModulo");
+                sbCopy.ColumnMappings.Add("IdPermisson", "IdPermisson");
+                sbCopy.BulkCopyTimeout = 0;
+                sbCopy.BatchSize = 10000;
+                sbCopy.DestinationTableName = TableObjects.PermissonRoles;
+                sbCopy.WriteToServer(rows.AsDataTable());
+                sbCopy.Close();
+            }
+        }
+
+        private static Dictionary<int, ActionPermissons> LoadRolePermissons(
+            SqlConnection connection,
+            string roleId)
+        {
+            Dictionary<int, ActionPermissons> byModule = new Dictionary<int, ActionPermissons>();
+
+            if (string.IsNullOrWhiteSpace(roleId))
+            {
+                return byModule;
+            }
+
+            using (SqlCommand command = new SqlCommand(DataObjects.Usp_Security_PermissonRoles_GETL)
+            {
+                Connection = connection,
+                CommandType = CommandType.StoredProcedure
+            })
+            {
+                command.Parameters.Add(new SqlParameter("@IdRol", SqlDbType.NVarChar)
+                {
+                    SqlValue = TypeHelper.ValidateString(roleId)
+                });
+
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        int idModulo = Convert.ToInt32(reader["IdModulo"]);
+                        int idPermisson = Convert.ToInt32(reader["IdPermisson"]);
+
+                        ActionPermissons permissons;
+                        if (!byModule.TryGetValue(idModulo, out permissons))
+                        {
+                            permissons = new ActionPermissons();
+                            byModule[idModulo] = permissons;
+                        }
+
+                        // Los numeros son dbo.Permisson y no un enum local: si algun dia
+                        // se agrega un sexto tipo, aqui no casa con ningun caso y se
+                        // ignora, que es mejor que encender una casilla equivocada.
+                        switch (idPermisson)
+                        {
+                            case 1: permissons.Ver = true; break;
+                            case 2: permissons.Editar = true; break;
+                            case 3: permissons.Crear = true; break;
+                            case 4: permissons.Solicitar = true; break;
+                            case 5: permissons.Autorizar = true; break;
+                        }
+                    }
+                }
+            }
+
+            return byModule;
+        }
+
+        /// <summary>
+        /// Los permisos de un modulo, o todos apagados si no tiene ninguno.
+        /// </summary>
+        /// <remarks>
+        /// Devuelve SIEMPRE un objeto y nunca null: la pantalla ata cinco casillas a
+        /// estas banderas y un null la obligaria a defenderse en cada una.
+        /// </remarks>
+        private static ActionPermissons ResolvePermissons(
+            Dictionary<int, ActionPermissons> byModule,
+            int idModulo)
+        {
+            ActionPermissons found;
+            if (byModule != null && byModule.TryGetValue(idModulo, out found))
+            {
+                return found;
+            }
+
+            return new ActionPermissons();
+        }
+
         private static bool ReadGranted(DataRow row)
         {
             if (!row.Table.Columns.Contains("Status"))
@@ -1853,7 +1994,18 @@
         /// abajo todo es ActionItem anidado, que es lo unico marcable y ahora no tiene
         /// tope de profundidad.
         /// </remarks>
-        private static List<RolesAccionAlta> BuildRoleModuleTree(DataTable table)
+        /// <summary>
+        /// Arma el arbol de modulos de la pantalla de roles.
+        /// </summary>
+        /// <param name="permissonsByModule">
+        /// Tipos de permiso del rol, indexados por modulo. Opcional: las vistas que no
+        /// van contra un rol -- el catalogo completo del alta, los permisos especiales
+        /// por usuario -- lo dejan nulo y las cinco banderas salen apagadas, que es lo
+        /// que devolvian antes de existir este parametro.
+        /// </param>
+        private static List<RolesAccionAlta> BuildRoleModuleTree(
+            DataTable table,
+            Dictionary<int, ActionPermissons> permissonsByModule = null)
         {
             List<RolesAccionAlta> result = new List<RolesAccionAlta>();
 
@@ -1882,7 +2034,7 @@
                         Views view = new Views
                         {
                             ViewName = rowView.Field<string>("NombreModulo"),
-                            Acciones = BuildActions(byParent, rowView, new HashSet<int>())
+                            Acciones = BuildActions(byParent, rowView, new HashSet<int>(), permissonsByModule)
                         };
 
                         submodule.Vistas.Add(view);
@@ -1900,7 +2052,8 @@
         private static List<ActionItem> BuildActions(
             Dictionary<int, List<DataRow>> byParent,
             DataRow parentRow,
-            HashSet<int> ancestors)
+            HashSet<int> ancestors,
+            Dictionary<int, ActionPermissons> permissonsByModule = null)
         {
             List<ActionItem> actions = new List<ActionItem>();
 
@@ -1924,9 +2077,10 @@
                     Name = row.Field<string>("NombreModulo"),
                     IdAction = idModulo,
                     Permisson = ReadGranted(row),
+                    Permisos = ResolvePermissons(permissonsByModule, idModulo),
                     StartDate = ReadOptionalDate(row, "InitialDate"),
                     EndDate = ReadOptionalDate(row, "FinalDate"),
-                    Acciones = BuildActions(byParent, row, ancestors)
+                    Acciones = BuildActions(byParent, row, ancestors, permissonsByModule)
                 };
 
                 actions.Add(action);
@@ -2188,8 +2342,14 @@
 
                 reader.Close();
                 command.Dispose();
-                // Status viene como bit en estas vistas y lo lee ReadGranted.
-                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
+                command = null;
+
+                // Status viene como bit en estas vistas y lo lee ReadGranted: dice si el
+                // modulo SE VE. Que se puede HACER con el vive en dbo.PermissonRoles y se
+                // lee aparte, porque esta vista no lo trae.
+                ListRolesAccionAlta = BuildRoleModuleTree(
+                    tablaDatos,
+                    LoadRolePermissons(connection, RoleId));
 
             }
             catch (Exception ex)
@@ -2976,6 +3136,12 @@
                     response.ErrorList.Add(new ErrorDto() { Code = ErrorMessage.DATA_ERRORCODE, Message = string.Format(ErrorMessage.BULK_UPDATE_TABLE, TableObjects.ModuloAccesos), TechnicalMessage = exception.Message });
                 }
 
+                // Los TIPOS de permiso. Va fuera del try de arriba y dentro de la misma
+                // transaccion: si esto falla, el rol no puede quedarse con la visibilidad
+                // escrita y los permisos no, que es exactamente el estado roto que este
+                // metodo producia siempre.
+                WriteRolePermissons(connection, transaction, request.Permissons, strRolId[0].ToString());
+
                 SqlCommand command2 = null;
 
                 command2 = new SqlCommand(DataObjects.Usp_Security_Rol_UDP)
@@ -3306,6 +3472,12 @@
                     response.Success = false;
                     response.ErrorList.Add(new ErrorDto() { Code = ErrorMessage.DATA_ERRORCODE, Message = string.Format(ErrorMessage.BULK_UPDATE_TABLE, TableObjects.ModuloAccesos), TechnicalMessage = exception.Message });
                 }
+
+                // Los TIPOS de permiso. Usp_Security_PermissonRoles_DEL, arriba, dejo la
+                // tabla vacia para este rol; sin esto el rol se quedaba sin VER, EDITAR,
+                // CREAR, SOLICITAR ni AUTORIZAR cada vez que alguien guardaba la pantalla.
+                WriteRolePermissons(connection, transaction, request.Permissons, strRolId[0].ToString());
+
                 //***************************************************************************************************************************************************
                 //***************************************************************************************************************************************************
                 //***************************************************************************************************************************************************

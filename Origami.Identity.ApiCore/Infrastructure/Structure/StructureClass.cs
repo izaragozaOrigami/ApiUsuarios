@@ -23,11 +23,38 @@ namespace Origami.Identity.Api.Core.Infrastructure
         public List<ActionItem> Acciones { get; set; }
     }
 
+    /// <summary>
+    /// Los cinco tipos de permiso de dbo.Permisson sobre un mismo modulo.
+    /// </summary>
+    /// <remarks>
+    /// Van como cinco banderas y no como una lista de ids porque quien las consume es
+    /// una fila de casillas en la pantalla de roles: una lista obligaria al front a
+    /// traducir numeros a posiciones, y ese mapeo acabaria duplicado en los dos lados.
+    ///
+    /// Es informacion DISTINTA de Permisson. Aquella sale de dbo.ModuloAccesos y dice
+    /// si el modulo se ve; estas salen de dbo.PermissonRoles y dicen que se puede hacer
+    /// con el. Un rol puede tener lo uno sin lo otro, y de hecho ocurre.
+    /// </remarks>
+    public class ActionPermissons
+    {
+        public bool Ver { get; set; }
+        public bool Editar { get; set; }
+        public bool Crear { get; set; }
+        public bool Solicitar { get; set; }
+        public bool Autorizar { get; set; }
+    }
+
     public class ActionItem
     {
         public string Name { get; set; }
         public int IdAction { get; set; }
+
+        /// <summary>Visibilidad: el rol tiene fila en dbo.ModuloAccesos.</summary>
         public bool Permisson { get; set; }
+
+        /// <summary>Que puede hacer: los tipos de dbo.PermissonRoles.</summary>
+        public ActionPermissons Permisos { get; set; } = new ActionPermissons();
+
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
 
