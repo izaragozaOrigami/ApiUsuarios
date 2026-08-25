@@ -2280,8 +2280,14 @@
 
                 reader.Close();
                 command.Dispose();
-                // Status viene como bit en estas vistas y lo lee ReadGranted.
-                ListRolesAccionAlta = BuildRoleModuleTree(tablaDatos);
+                command = null;
+                // Status (bit) dice si el modulo SE VE; los cinco tipos de permiso
+                // (VER/EDITAR/CREAR/SOLICITAR/AUTORIZAR) viven en dbo.PermissonRoles y se
+                // cargan aparte, igual que en GetAllModulesByRoleNewAlong, para que el
+                // Detalle del rol muestre lo mismo que la pantalla de Edicion.
+                ListRolesAccionAlta = BuildRoleModuleTree(
+                    tablaDatos,
+                    LoadRolePermissons(connection, RoleId));
 
             }
             catch (Exception ex)
