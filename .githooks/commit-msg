@@ -1,0 +1,66 @@
+#!/bin/sh
+# commit-msg -- valida Conventional Commits + scope de modulo (lista cerrada).
+# Instalar una vez por clon:  git config core.hooksPath .githooks
+# Ver CONVENCIONES.md. NOTA: este archivo debe conservar saltos de linea LF.
+
+msgfile="$1"
+# Primera linea util (ignora comentarios '#', quita CR de Windows, salta blancos).
+subject="$(grep -v '^#' "$msgfile" | tr -d '\r' | sed '/^[[:space:]]*$/d' | head -n1)"
+
+# Saltar commits automaticos (merge/revert/fixup/squash/vacio).
+case "$subject" in
+  "Merge "*|"Revert "*|fixup!*|squash!*|"") exit 0 ;;
+esac
+
+types="feat|fix|docs|refactor|perf|test|chore|build|ci|style|revert"
+
+# 1) Formato Conventional Commits.
+if ! printf '%s' "$subject" | grep -Eq "^(${types})(\([a-z0-9._-]+\))?(!)?: .+"; then
+  printf 'ERROR: commit rechazado -- no sigue Conventional Commits.\n'
+  printf '  Formato: tipo(scope): descripcion\n'
+  printf '  Ejemplo: feat(checklist): agrega asignacion de unidad\n'
+  printf '  Tipos:   %s\n' "$types"
+  exit 1
+fi
+
+ctype="$(printf '%s' "$subject" | sed -E 's/^([a-z]+).*/\1/')"
+scope="$(printf '%s' "$subject" | sed -nE 's/^[a-z]+\(([a-z0-9._-]+)\).*/\1/p')"
+
+# Resolver scopes.txt (junto al hook, o en la raiz del repo).
+hookdir="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+scopesfile=""
+for c in "${hookdir}/scopes.txt" ".githooks/scopes.txt" "scopes.txt"; do
+  [ -f "$c" ] && { scopesfile="$c"; break; }
+done
+list_scopes() { grep -vE '^[[:space:]]*(#|$)' "$scopesfile" 2>/dev/null | tr '\n' ' '; }
+infra="dev repo deps release"
+is_infra() { for s in $infra; do [ "$1" = "$s" ] && return 0; done; return 1; }
+
+# 2) Reglas de scope segun el tipo.
+case "$ctype" in
+  feat|fix|perf|refactor)
+    if [ -z "$scope" ]; then
+      printf "ERROR: '%s' requiere scope de modulo. Ej: %s(checklist): ...\n" "$ctype" "$ctype"
+      [ -n "$scopesfile" ] && printf '  Modulos: %s\n' "$(list_scopes)"
+      exit 1
+    fi
+    if [ -n "$scopesfile" ]; then
+      if ! grep -Fxq "$scope" "$scopesfile"; then
+        printf "ERROR: scope '%s' no esta en la lista de modulos.\n" "$scope"
+        printf '  Validos: %s\n' "$(list_scopes)"
+        printf '  Modulo nuevo? Agregalo a .githooks/scopes.txt (commit: chore(repo): ...).\n'
+        exit 1
+      fi
+    else
+      printf "WARN: scopes.txt no encontrado; no valide el scope '%s'.\n" "$scope"
+    fi
+    ;;
+  *)
+    if [ -n "$scope" ] && [ -n "$scopesfile" ] && ! grep -Fxq "$scope" "$scopesfile" && ! is_infra "$scope"; then
+      printf "ERROR: scope '%s' no reconocido (modulo valido o infra: %s).\n" "$scope" "$infra"
+      exit 1
+    fi
+    ;;
+esac
+
+exit 0

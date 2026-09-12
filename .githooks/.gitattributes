@@ -1,0 +1,4 @@
+# Los hooks los ejecuta sh: deben quedar en LF aunque el repo use autocrlf.
+commit-msg   text eol=lf
+install.sh   text eol=lf
+scopes.txt   text eol=lf
