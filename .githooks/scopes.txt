@@ -1,6 +1,6 @@
-# Módulos válidos como scope de commit (lista cerrada).
-# Uno por línea, minúsculas, sin espacios. Comentarios con #.
-# Agregar un módulo = una línea nueva + commit "chore(repo): ..." + avisar al equipo.
+# Modulos validos como scope. Un scope vale si es un modulo de esta lista
+# O si empieza con "<modulo>-" (sub-scope), p.ej. mantenimiento-externo.
+# Uno por linea, minusculas. Agregar modulo = 1 linea + commit "chore(repo): ..." + avisar al equipo.
 checklist
 catalogos
 combustibles
@@ -10,3 +10,10 @@ cargas-masivas
 rendimientos
 refacciones
 mantenimiento
+inventario
+usuarios
+notificaciones
+neumaticos
+tema
+proveedores
+ui

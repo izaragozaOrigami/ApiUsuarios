@@ -23,19 +23,22 @@ tipo(scope): descripción en minúscula, imperativo, sin punto final
 
 **Tipos permitidos:** `feat` · `fix` · `docs` · `refactor` · `perf` · `test` · `chore` · `build` · `ci` · `style` · `revert`
 
-- `feat`, `fix`, `perf`, `refactor` → **scope OBLIGATORIO** y debe ser un módulo de la lista.
-- `docs`, `chore`, `ci`, `build`, `test`, `style` → scope opcional (si lo pones, módulo válido o infra: `dev`, `repo`, `deps`, `release`).
+- `feat`, `fix`, `perf`, `refactor` → **scope OBLIGATORIO**: un módulo de la lista, o un sub-scope `modulo-<algo>`.
+- `docs`, `chore`, `ci`, `build`, `test`, `style` → scope opcional (si lo pones: módulo, sub-scope, o infra: `repo`, `ci`, `build`, `deploy`, `dev`, `env`, `qa`, `sql`, `webapi`, `tenant`, `config`, `demo`).
 
-## 2. Scopes = módulos (lista cerrada)
+## 2. Scopes = módulos (+ sub-scopes)
 
 El scope **es** el módulo. Lista canónica (vive en `.githooks/scopes.txt`):
 
 ```
-checklist · catalogos · combustibles · solicitudes · conciliacion
-cargas-masivas · rendimientos · refacciones · mantenimiento
+checklist · catalogos · combustibles · solicitudes · conciliacion · cargas-masivas
+rendimientos · refacciones · mantenimiento · inventario · usuarios · notificaciones
+neumaticos · tema · proveedores · ui
 ```
 
-Scopes libres rompen el mapeo del sync por módulo. Si no está en la lista, el hook rechaza el commit.
+Puedes usar el módulo tal cual (`mantenimiento`) **o un sub-scope** con prefijo `modulo-<algo>` (`mantenimiento-externo`, `catalogos-admin`, `inventario-almacen`). El tool mapea `mantenimiento-*` → módulo `mantenimiento` para el sync. Si el scope no es un módulo ni `modulo-<sub>`, el hook lo rechaza.
+
+> Esta lista salió del historial real (ver `REVISION-scopes.md`). Algunos casos siguen abiertos a acordar con el equipo (p.ej. `refacciones-solicitudes`, `failure-checklist`, `roles`/`login`→`usuarios`).
 
 ## 3. Reglas de oro
 
@@ -86,6 +89,7 @@ El hook `commit-msg` valida el formato y el scope. Si un commit no cumple, lo re
 
 ✅ **Bien**
 ```
+feat(mantenimiento-externo): valida folio del proveedor
 feat(checklist): asignación de unidad (Cbu/Region/Site) en VehicleInformation
 fix(solicitudes): OC duplicada por subquery en el monitor
 perf(combustibles): índice para el cruce Webfleet
