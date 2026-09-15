@@ -7,7 +7,14 @@ msgfile="$1"
 # Primera linea util (ignora comentarios '#', quita CR de Windows, salta blancos).
 subject="$(grep -v '^#' "$msgfile" | tr -d '\r' | sed '/^[[:space:]]*$/d' | head -n1)"
 
-# Saltar commits automaticos (merge/revert/fixup/squash/vacio).
+# Saltar merges de forma robusta: durante CUALQUIER merge existe MERGE_HEAD,
+# sin depender del texto (un GUI puede escribir otro mensaje de merge).
+gitdir="${GIT_DIR:-$(git rev-parse --git-dir 2>/dev/null)}"
+if [ -n "$gitdir" ] && [ -f "$gitdir/MERGE_HEAD" ]; then
+  exit 0
+fi
+
+# Saltar commits automaticos por texto (merge/revert/fixup/squash/vacio).
 case "$subject" in
   "Merge "*|"Revert "*|fixup!*|squash!*|"") exit 0 ;;
 esac
