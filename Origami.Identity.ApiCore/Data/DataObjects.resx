@@ -175,6 +175,9 @@
   <data name="Usp_Security_PermissonRoles_DEL" xml:space="preserve">
     <value>[dbo].[Usp_Security_PermissonRoles_DEL]</value>
   </data>
+  <data name="Usp_Security_PermissonRoles_GETL" xml:space="preserve">
+    <value>[dbo].[Usp_Security_PermissonRoles_GETL]</value>
+  </data>
   <data name="Usp_Security_Permissons" xml:space="preserve">
     <value>[dbo].[Usp_Security_Permissons]</value>
   </data>
