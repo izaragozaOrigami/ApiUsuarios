@@ -799,8 +799,12 @@
 
                             region.RegionId = grupoRegion.REGIONID.ToString();
                             region.RegionName = grupoRegion.REGIONNAME;
+                            // (20261029) Los sitios de la region DENTRO de este CBU. Una region puede estar en
+                            // varios CBU (NACIONAL en BEC, EDP y PET); filtrando solo por region, BEC > NACIONAL
+                            // listaba tambien los sitios de EDP y PET. Mismo criterio que GetAccesibility.
                             var gruposSites = from row in tablaDatos.AsEnumerable()
                                               where row.Field<Guid>("RegionId") == grupoRegion.REGIONID
+                                                    && row.Field<Guid>("CBUId") == grupoCBU.CBUID
                                               group row by new
                                               {
                                                   SITIOID = row.Field<Guid>("SITIOID"),
