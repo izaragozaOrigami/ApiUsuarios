@@ -78,6 +78,28 @@ WHERE  a.Status = 1
                      AND  (u.Subarea IS NULL OR u.Subarea = s.Identifier)));
 GO
 
+/* ¿El usuario puede atender un registro de esta Area/Subarea? Regla UNICA para
+   los SPs que resuelven aprobadores, candidatos y destinatarios: se agrega junto
+   al JOIN con dbo.AccessibilityNetUsers, como un filtro mas de la accesibilidad.
+     - Usuario sin filas en AccessibilityNetUsersArea -> sin restriccion: si.
+     - Registro sin Area (solicitud sin unidad, carga masiva) -> si: no hay con
+       que comparar, y negarlo dejaria la solicitud sin quien la atienda.
+     - (Area, NULL) = toda el Area; (Area, Subarea) = solo esa Subarea.
+   Uso: AND EXISTS (SELECT 1 FROM dbo.fn_UserAreaAllows(anu.UserId, ci.Area, ci.Subarea)) */
+CREATE OR ALTER FUNCTION dbo.fn_UserAreaAllows (@UserId nvarchar(128), @AreaId uniqueidentifier, @SubareaId uniqueidentifier)
+RETURNS TABLE
+AS
+RETURN
+SELECT Allowed = CAST(1 AS bit)
+WHERE  @AreaId IS NULL
+   OR  NOT EXISTS (SELECT 1 FROM dbo.AccessibilityNetUsersArea x WHERE x.UserId = @UserId)
+   OR  EXISTS (SELECT 1
+               FROM   dbo.AccessibilityNetUsersArea x
+               WHERE  x.UserId = @UserId
+                 AND  x.Area   = @AreaId
+                 AND  (x.Subarea IS NULL OR x.Subarea = @SubareaId));
+GO
+
 /* Catalogo activo Area -> Subarea, para las opciones de la pantalla de usuarios. */
 CREATE OR ALTER PROCEDURE dbo.Usp_Security_AccessibilityAreaCatalog_GET
 AS
