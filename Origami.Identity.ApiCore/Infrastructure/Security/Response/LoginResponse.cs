@@ -55,6 +55,14 @@ namespace Origami.Identity.Api.Core.Infrastructure.Security.Response
         [JsonPropertyName("cbus")]
         public List<CBU> CBUs { get; set; }
 
+        // Áreas/Subáreas que el usuario puede ver, ya expandidas, para el selector del header.
+        // areaRestricted = false: no tiene restricción y "Todos" no debe filtrar por Área.
+        [JsonPropertyName("areaRestricted")]
+        public bool AreaRestricted { get; set; }
+
+        [JsonPropertyName("areas")]
+        public List<AreaAccess> Areas { get; set; }
+
         [JsonPropertyName("modules")]
         public List<Modulos> Modules { get; set; }
 

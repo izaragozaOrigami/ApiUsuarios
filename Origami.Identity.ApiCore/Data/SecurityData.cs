@@ -342,6 +342,7 @@
                     }
 
                     response.CBUs = GetUserAccesibility(response.Id);
+                    response.Areas = GetUserAreaAccesibility(response.Id, false, out _);
                     response.Roles = GetRolesXId(response.Id);
                 }
                 reader.Close();
@@ -999,6 +1000,164 @@
             return response;
         }
 
+        /// <summary>
+        /// Catálogo activo Área -> Subárea, para asignar la restricción en la pantalla de usuarios.
+        /// </summary>
+        public List<AreaAccess> GetAreaCatalog()
+        {
+            List<AreaAccess> response = new List<AreaAccess>();
+            SqlConnection connection = new SqlConnection(_connectionString);
+            SqlCommand command = null;
+            SqlDataReader reader = null;
+            try
+            {
+                connection.Open();
+                command = new SqlCommand(DataObjects.Usp_Security_AccessibilityAreaCatalog_GET)
+                {
+                    Connection = connection,
+                    CommandType = CommandType.StoredProcedure
+                };
+                reader = command.ExecuteReader();
+
+                DataTable tablaDatos = new DataTable();
+                tablaDatos.Load(reader);
+                response = GroupAreas(tablaDatos);
+
+                reader.Close();
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+            finally
+            {
+                if (command != null)
+                {
+                    command.Dispose();
+                }
+                if (connection.State != ConnectionState.Closed)
+                {
+                    connection.Close();
+                    connection.Dispose();
+                }
+                if (reader != null && !reader.IsClosed)
+                {
+                    reader.Close();
+                }
+            }
+            return response;
+        }
+
+        /// <summary>
+        /// Restricción por Área del usuario (aplica en todos sus sitios).
+        /// expanded = false: lo que se le asignó; WholeArea = toda el Área. Vacía = sin restricción.
+        /// expanded = true: lo que puede ver, con todas sus Subáreas; sin restricción trae todo el catálogo.
+        /// </summary>
+        public List<AreaAccess> GetUserAreaAccesibility(string userId, bool expanded, out bool restricted)
+        {
+            List<AreaAccess> response = new List<AreaAccess>();
+            restricted = false;
+            SqlConnection connection = new SqlConnection(_connectionString);
+            SqlCommand command = null;
+            SqlDataReader reader = null;
+            try
+            {
+                connection.Open();
+                command = new SqlCommand(DataObjects.Usp_Security_AccessibilityArea_GETL)
+                {
+                    Connection = connection,
+                    CommandType = CommandType.StoredProcedure
+                };
+                command.Parameters.Add(new SqlParameter("@UserId", SqlDbType.VarChar) { SqlValue = TypeHelper.ValidateString(userId) });
+                command.Parameters.Add(new SqlParameter("@Expanded", SqlDbType.Bit) { SqlValue = expanded });
+                reader = command.ExecuteReader();
+
+                DataTable tablaDatos = new DataTable();
+                tablaDatos.Load(reader);
+                restricted = tablaDatos.AsEnumerable().Any(row => row.Field<bool>("IsRestricted"));
+                response = GroupAreas(tablaDatos);
+
+                reader.Close();
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+            finally
+            {
+                if (command != null)
+                {
+                    command.Dispose();
+                }
+                if (connection.State != ConnectionState.Closed)
+                {
+                    connection.Close();
+                    connection.Dispose();
+                }
+                if (reader != null && !reader.IsClosed)
+                {
+                    reader.Close();
+                }
+            }
+            return response;
+        }
+
+        // Filas AreaId/AreaName/SubareaId/SubareaName -> Área con sus Subáreas, en el orden del SP.
+        // "Toda el Área": la columna WholeArea cuando el SP la trae (modo expandido, donde
+        // las subáreas vienen listadas); si no, una fila con SubareaId NULL.
+        private static List<AreaAccess> GroupAreas(DataTable tablaDatos)
+        {
+            bool traeWholeArea = tablaDatos.Columns.Contains("WholeArea");
+            return tablaDatos.AsEnumerable()
+                .GroupBy(row => new { AreaId = row.Field<Guid>("AreaId"), AreaName = row.Field<string>("AreaName") })
+                .Select(grp => new AreaAccess
+                {
+                    AreaId = grp.Key.AreaId.ToString(),
+                    AreaName = grp.Key.AreaName,
+                    WholeArea = traeWholeArea
+                        ? grp.Any(row => row.Field<bool>("WholeArea"))
+                        : grp.Any(row => row.IsNull("SubareaId")),
+                    Subareas = grp.Where(row => !row.IsNull("SubareaId"))
+                                  .Select(row => new SubareaAccess
+                                  {
+                                      SubareaId = row.Field<Guid>("SubareaId").ToString(),
+                                      SubareaName = row.Field<string>("SubareaName")
+                                  })
+                                  .ToList()
+                })
+                .ToList();
+        }
+
+        // TVP dbo.AccessibilityAreaType (UserId, Area, Subarea); se enlaza por posición, así que
+        // el orden de las columnas es el del tipo. WholeArea -> una fila con Subarea NULL;
+        // si no, una fila por Subárea.
+        private static DataTable BuildAreasTable(List<AreaAccess>? areas, string userId)
+        {
+            DataTable dt = new DataTable();
+            dt.Columns.Add("UserId", typeof(string));
+            dt.Columns.Add("Area", typeof(Guid));
+            dt.Columns.Add("Subarea", typeof(Guid));
+
+            foreach (AreaAccess area in areas ?? new List<AreaAccess>())
+            {
+                if (!Guid.TryParse(area.AreaId, out Guid areaId))
+                    continue;
+
+                if (area.WholeArea)
+                {
+                    dt.Rows.Add(userId, areaId, DBNull.Value);
+                    continue;
+                }
+
+                foreach (SubareaAccess subarea in area.Subareas ?? new List<SubareaAccess>())
+                {
+                    if (Guid.TryParse(subarea.SubareaId, out Guid subareaId))
+                        dt.Rows.Add(userId, areaId, subareaId);
+                }
+            }
+            return dt;
+        }
+
         public List<Modulos> GetUserModulo(string userId)
         {
             List<Modulos> response = new List<Modulos>();
@@ -1151,6 +1310,7 @@
                 };
 
                 command.Parameters.Add(new SqlParameter("@Accesibility", SqlDbType.Structured) { SqlValue = dt });
+                command.Parameters.Add(new SqlParameter("@Areas", SqlDbType.Structured) { SqlValue = BuildAreasTable(accessibility.Areas, userId) });
                 var responseInsert = command.ExecuteNonQuery();
                 response.Success = true;
                 return response;
@@ -1218,6 +1378,9 @@
                 };
 
                 command.Parameters.Add(new SqlParameter("@Accesibility", SqlDbType.Structured) { SqlValue = dt });
+                // Areas null = el front no las manda (versión anterior): el SP no las toca.
+                command.Parameters.Add(new SqlParameter("@Areas", SqlDbType.Structured) { SqlValue = BuildAreasTable(accessibility.Areas, userId) });
+                command.Parameters.Add(new SqlParameter("@ReplaceAreas", SqlDbType.Bit) { SqlValue = accessibility.Areas != null });
                 var responseInsert = command.ExecuteNonQuery();
                 response.Success = true;
                 response.Message = "Succefully";

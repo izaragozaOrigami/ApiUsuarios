@@ -12,6 +12,10 @@ namespace Origami.Identity.Api.Core.Infrastructure
         [JsonPropertyName("CBUS")]
         public List<CBU> CBU { get; set; }
 
+        // null = el front no manda áreas (versión anterior): no se tocan.
+        // Lista vacía = sin restricción por Área.
+        [JsonPropertyName("areas")]
+        public List<AreaAccess>? Areas { get; set; }
 
     }
 }

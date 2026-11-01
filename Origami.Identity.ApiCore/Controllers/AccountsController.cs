@@ -233,6 +233,7 @@ namespace Origami.Identity.Api.Controllers
                 permissonAccess.perAccess = _securityData.ConstruirEstructuraJerarquica(user.Id);
                 roles = _securityData.GetRolesXId(user.Id);
                 cbus = _securityData.GetUserAccesibility(user.Id);
+                List<AreaAccess> areas = _securityData.GetUserAreaAccesibility(user.Id, true, out bool areaRestricted);
                 modules = _securityData.GetUserModulo(user.Id);
                 var tokenHandler = new JwtSecurityTokenHandler();
                 string token2 = tokenHandler.WriteToken(token);
@@ -250,6 +251,8 @@ namespace Origami.Identity.Api.Controllers
                     Picture = UserStorageResolver.ResolveUrl(user.PhotoURL),
                     Roles = roles,
                     CBUs = cbus,
+                    AreaRestricted = areaRestricted,
+                    Areas = areas,
                     Updated = DateTime.Now.ToString(),
                     Token = token2,
                     TimeExpirationToken = token.ValidTo.ToLocalTime(),
@@ -550,6 +553,7 @@ namespace Origami.Identity.Api.Controllers
             AccebilityResponse accebilityResponse = new AccebilityResponse();
             accebilityResponse.countAccesibility = cBUs.Count.ToString();
             accebilityResponse.accesibility = cBUs;
+            accebilityResponse.areas = _securityData.GetAreaCatalog();
             return Ok(accebilityResponse);
         }
 

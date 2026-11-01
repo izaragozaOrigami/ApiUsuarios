@@ -113,7 +113,25 @@ namespace Origami.Identity.Api.Core.Data {
                 return ResourceManager.GetString("Usp_Security_Accessibility_GET", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Busca una cadena traducida similar a [dbo].[Usp_Security_AccessibilityArea_GETL].
+        /// </summary>
+        internal static string Usp_Security_AccessibilityArea_GETL {
+            get {
+                return ResourceManager.GetString("Usp_Security_AccessibilityArea_GETL", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Busca una cadena traducida similar a [dbo].[Usp_Security_AccessibilityAreaCatalog_GET].
+        /// </summary>
+        internal static string Usp_Security_AccessibilityAreaCatalog_GET {
+            get {
+                return ResourceManager.GetString("Usp_Security_AccessibilityAreaCatalog_GET", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Busca una cadena traducida similar a [dbo].[Usp_Security_AccessibilityNetUsers_INS].
         /// </summary>

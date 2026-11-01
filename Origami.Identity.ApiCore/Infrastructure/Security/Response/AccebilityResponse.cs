@@ -13,5 +13,9 @@ namespace Origami.Identity.Api.Core.Infrastructure.Security.Response
         [JsonPropertyName( "accesibility")]
         public List<CBU> accesibility { get; set; }
 
+        // Catálogo activo Área -> Subárea para asignar la restricción en la pantalla de usuarios.
+        [JsonPropertyName( "areas")]
+        public List<AreaAccess> areas { get; set; }
+
     }
 }

@@ -148,6 +148,12 @@
   <data name="Usp_Security_Accessibility_GET" xml:space="preserve">
     <value>[dbo].[Usp_Security_Accessibility_GET]</value>
   </data>
+  <data name="Usp_Security_AccessibilityArea_GETL" xml:space="preserve">
+    <value>[dbo].[Usp_Security_AccessibilityArea_GETL]</value>
+  </data>
+  <data name="Usp_Security_AccessibilityAreaCatalog_GET" xml:space="preserve">
+    <value>[dbo].[Usp_Security_AccessibilityAreaCatalog_GET]</value>
+  </data>
   <data name="Usp_Security_Components_By_User_Get" xml:space="preserve">
     <value>[dbo].[Usp_Security_Components_By_User_Get]</value>
   </data>

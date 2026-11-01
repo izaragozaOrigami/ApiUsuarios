@@ -48,6 +48,10 @@ namespace Origami.Identity.Api.Core.Infrastructure
         [JsonPropertyName("cbus")]
         public List<CBU> CBUs { get; set; }
 
+        // Restricción por Área asignada (vacía = sin restricción), para la pantalla de edición.
+        [JsonPropertyName("areas")]
+        public List<AreaAccess> Areas { get; set; }
+
         [JsonPropertyName("modulos")]
         public List<Modulos> Modulos { get; set; }
 
