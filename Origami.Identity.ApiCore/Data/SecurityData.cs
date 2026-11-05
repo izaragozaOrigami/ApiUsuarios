@@ -1274,7 +1274,8 @@
             dt.Columns.Add("RegionId", typeof(string));
             dt.Columns.Add("CBU", typeof(string));
 
-
+            // Mismo cuidado que en la edición: un SiteByRegion repetido violaría la PK.
+            HashSet<string> sitiosAgregados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (accessibility.CBU.Count > 0)
             {
                 foreach (CBU CBU in accessibility.CBU)
@@ -1283,6 +1284,9 @@
                     {
                         foreach (Site site in region.Sites)
                         {
+                            if (!sitiosAgregados.Add(site.SiteByRegionId.ToString()))
+                                continue;
+
                             DataRow row = dt.NewRow();
                             row["userId"] = userId;
                             row["SiteByRegion"] = site.SiteByRegionId.ToString();
@@ -1347,6 +1351,9 @@
             // localidad), y antes aquí se contestaba "Succefully" igual: el front creía que
             // había guardado. Ahora una región sin sitios, o ningún sitio, es un error.
             List<string> regionesSinSitios = new List<string>();
+            // La PK es (UserId, SiteByRegion): un sitio repetido en el payload tumbaba el
+            // guardado completo con "Violation of PRIMARY KEY". Se guarda una sola vez.
+            HashSet<string> sitiosAgregados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (CBU CBU in accessibility?.CBU ?? new List<CBU>())
             {
                 foreach (Region region in CBU.regions ?? new List<Region>())
@@ -1359,6 +1366,9 @@
 
                     foreach (Site site in region.Sites)
                     {
+                        if (!sitiosAgregados.Add(site.SiteByRegionId.ToString()))
+                            continue;
+
                         DataRow row = dt.NewRow();
                         row["userId"] = userId;
                         row["SiteByRegion"] = site.SiteByRegionId.ToString();
