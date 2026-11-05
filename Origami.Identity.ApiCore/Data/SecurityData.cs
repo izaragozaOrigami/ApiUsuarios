@@ -1343,26 +1343,51 @@
             dt.Columns.Add("Region", typeof(string));
             dt.Columns.Add("CBU", typeof(string));
 
-            if (accessibility.CBU.Count > 0)
+            // El SP no toca nada si no le llegan sitios (protege de dejar al usuario sin
+            // localidad), y antes aquí se contestaba "Succefully" igual: el front creía que
+            // había guardado. Ahora una región sin sitios, o ningún sitio, es un error.
+            List<string> regionesSinSitios = new List<string>();
+            foreach (CBU CBU in accessibility?.CBU ?? new List<CBU>())
             {
-                foreach (CBU CBU in accessibility.CBU)
+                foreach (Region region in CBU.regions ?? new List<Region>())
                 {
-                    foreach (Region region in CBU.regions)
+                    if (region.Sites == null || region.Sites.Count == 0)
                     {
-                        foreach (Site site in region.Sites)
-                        {
-                            DataRow row = dt.NewRow();
-                            row["userId"] = userId;
-                            row["SiteByRegion"] = site.SiteByRegionId.ToString();
-                            row["Site"] = site.Id.ToString();
-                            row["Region"] = region.RegionId.ToString();
-                            row["CBU"] = CBU.Id.ToString();
-                            dt.Rows.Add(row);
-                        }
+                        regionesSinSitios.Add($"{region.RegionName ?? region.RegionId} ({CBU.CBUName ?? CBU.Id})");
+                        continue;
+                    }
+
+                    foreach (Site site in region.Sites)
+                    {
+                        DataRow row = dt.NewRow();
+                        row["userId"] = userId;
+                        row["SiteByRegion"] = site.SiteByRegionId.ToString();
+                        row["Site"] = site.Id.ToString();
+                        row["Region"] = region.RegionId.ToString();
+                        row["CBU"] = CBU.Id.ToString();
+                        dt.Rows.Add(row);
                     }
                 }
-
             }
+
+            if (regionesSinSitios.Count > 0)
+            {
+                response.Success = false;
+                response.Message = "No se guardó la localidad: "
+                    + (regionesSinSitios.Count == 1 ? "la región " : "las regiones ")
+                    + string.Join(", ", regionesSinSitios)
+                    + (regionesSinSitios.Count == 1 ? " no tiene" : " no tienen")
+                    + " sitios. Elige al menos un sitio en cada región.";
+                return response;
+            }
+
+            if (dt.Rows.Count == 0)
+            {
+                response.Success = false;
+                response.Message = "No se guardó la localidad: no trae ningún sitio. Asigna al menos un CBU, una región y un sitio.";
+                return response;
+            }
+
             SqlConnection connection = new SqlConnection(_connectionString);
             SqlCommand command = null;
             SqlDataReader reader = null;
