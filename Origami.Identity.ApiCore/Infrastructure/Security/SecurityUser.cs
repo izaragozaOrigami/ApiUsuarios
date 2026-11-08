@@ -9,6 +9,10 @@ namespace Origami.Identity.Api.Core.Infrastructure
         [JsonPropertyName("userId")]
         public string Id { get; set; }
 
+        // Deshabilitado = LockoutEnd con fecha futura (lo calcula AccountsController).
+        [JsonPropertyName("disabled")]
+        public bool Disabled { get; set; }
+
         [JsonPropertyName("firstName")]
         public string? FirstName { get; set; }
 

@@ -46,6 +46,13 @@ namespace Origami.Identity.Api.Controllers
             _env = env;
         }
 
+        // Un usuario está deshabilitado mientras LockoutEnd tenga una fecha futura. No se usa
+        // LockoutEnabled porque la edición del usuario lo reescribe en cada guardado.
+        private static readonly DateTimeOffset DeshabilitadoHasta = new DateTimeOffset(9999, 12, 31, 0, 0, 0, TimeSpan.Zero);
+
+        private static bool EstaDeshabilitado(ApplicationUser user) =>
+            user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTimeOffset.UtcNow;
+
         [Authorize(Roles = "BasicAuthorization")]
         [HttpPost("Create")]
         public async Task<IActionResult> Create([FromBody] CreateUserBindingModel createUserModel)
@@ -209,6 +216,10 @@ namespace Origami.Identity.Api.Controllers
                 if (!passwordValid)
                     return Unauthorized();
 
+                // Se revisa después de la contraseña para no revelar el estado a quien no la sabe.
+                if (EstaDeshabilitado(user))
+                    return Unauthorized(new { disabled = true, message = "Tu usuario está deshabilitado. Pide a un administrador que lo habilite." });
+
                 // Claims
                 var claims = new List<Claim>
             {
@@ -307,6 +318,8 @@ namespace Origami.Identity.Api.Controllers
             List<Modulos> modulos = new List<Modulos>();
             modulos = _securityData.GetUserModulo(user.Id);
             user.Modulos = modulos;
+            ApplicationUser cuenta = await _userManager.FindByIdAsync(user.Id);
+            user.Disabled = cuenta != null && EstaDeshabilitado(cuenta);
             if (user != null)
             {
                 return Ok(user);
@@ -517,6 +530,43 @@ namespace Origami.Identity.Api.Controllers
         }
 
         /// <summary>
+        /// Habilita o deshabilita un usuario. Deshabilitado no entra, no puede pedir código de
+        /// recuperación y no se le reenvía el acceso. Solo administradores de Usuarios, y nadie
+        /// puede deshabilitarse a sí mismo (dejaría la plataforma sin quien lo regrese).
+        /// </summary>
+        [Authorize(Roles = "BasicAuthorization")]
+        [HttpPost]
+        [Route("SetUserEnabled")]
+        public async Task<IActionResult> SetUserEnabled(SetUserEnabledRequest request)
+        {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
+
+            string actual = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!request.Enabled && string.Equals(actual, request.UserId, StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new[] { "No puedes deshabilitar tu propio usuario." });
+            }
+
+            ApplicationUser user = await _userManager.FindByIdAsync(request.UserId);
+            if (user == null)
+            {
+                return NotFound(new[] { "Usuario no encontrado." });
+            }
+
+            user.LockoutEnd = request.Enabled ? null : DeshabilitadoHasta;
+            IdentityResult result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                return BadRequest(result.Errors.Select(e => e.Description));
+            }
+
+            return Ok(new { userId = user.Id, disabled = EstaDeshabilitado(user) });
+        }
+
+        /// <summary>
         /// Get UserAccessibility
         /// </summary>
         /// <param name="User">New User parameters</param>
@@ -584,6 +634,12 @@ namespace Origami.Identity.Api.Controllers
             var filePath = Path.Combine(AppContext.BaseDirectory, "Resources", "resources_views_emails_askPassword.html");
             string url = _configuration["RedirectUrl"] + "/auth/password-change";
             var result = await _userManager.FindByEmailAsync(request.email);
+            // Un usuario deshabilitado recibe la misma respuesta que un correo que no existe, y no
+            // se le manda código: así no puede reactivarse cambiando su contraseña.
+            if (result != null && EstaDeshabilitado(result))
+            {
+                result = null;
+            }
 
             if (result != null)
             {
@@ -638,6 +694,11 @@ namespace Origami.Identity.Api.Controllers
             RecoveryCodes currentCode = _securityData.GetRecoveryCode("", model.RecoveryCode);
 
             var user = await _userManager.FindByEmailAsync(currentCode.Email);
+
+            if (user != null && EstaDeshabilitado(user))
+            {
+                return BadRequest("Tu usuario está deshabilitado. Pide a un administrador que lo habilite.");
+            }
 
             string newPassword = model.NewPassword;
 
@@ -747,6 +808,8 @@ namespace Origami.Identity.Api.Controllers
             var existingUser = await _userManager.FindByEmailAsync(request.email);
             if (existingUser == null)
                 return NotFound("Usuario no encontrado.");
+            if (EstaDeshabilitado(existingUser))
+                return BadRequest("El usuario está deshabilitado. Habilítalo antes de reenviarle el acceso.");
 
             string password = GenerateRandomPassword(10);
 
