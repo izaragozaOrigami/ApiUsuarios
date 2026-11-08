@@ -3099,6 +3099,45 @@
                 listaPermisos.Add(modulePermissonHijo);
             }
         }
+        // Nodos de dbo.Modulo que dan derecho a administrar: las acciones de Crear y Editar
+        // de las pantallas Usuarios y Roles. El menú sale de esos mismos accesos, así que
+        // quien ve esas acciones es quien puede usarlas.
+        public static readonly int[] NodosAdminUsuarios = { 18, 22, 24, 25, 26, 27 };
+        public static readonly int[] NodosAdminRoles = { 29, 30, 33, 34 };
+
+        /// <summary>
+        /// Si alguno de los roles del usuario de la sesión tiene acceso a alguno de los nodos.
+        /// El usuario sale del token (NameIdentifier), nunca del cuerpo de la petición.
+        /// </summary>
+        public bool UserHasModuleAccess(System.Security.Claims.ClaimsPrincipal user, IReadOnlyList<int> moduloIds)
+        {
+            string userId = user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrWhiteSpace(userId) || moduloIds == null || moduloIds.Count == 0)
+            {
+                return false;
+            }
+
+            // Solo se concatenan los nombres de los parámetros (@m0, @m1...), no valores.
+            List<string> nombres = moduloIds.Select((_, i) => "@m" + i).ToList();
+            string query =
+                "SELECT CASE WHEN EXISTS (SELECT 1 FROM [dbo].[AspNetUserRoles] ur " +
+                "JOIN [dbo].[ModuloAccesos] ma ON CAST(ma.[RoleId] AS nvarchar(450)) = ur.[RoleId] " +
+                "WHERE ur.[UserId] = @UserId AND ma.[ModuloId] IN (" + string.Join(", ", nombres) + ")) " +
+                "THEN 1 ELSE 0 END";
+
+            using (SqlConnection connection = new SqlConnection(_connectionString))
+            using (SqlCommand command = new SqlCommand(query, connection))
+            {
+                command.Parameters.Add("@UserId", SqlDbType.NVarChar, 450).Value = userId;
+                for (int i = 0; i < moduloIds.Count; i++)
+                {
+                    command.Parameters.Add(nombres[i], SqlDbType.Int).Value = moduloIds[i];
+                }
+                connection.Open();
+                return Convert.ToInt32(command.ExecuteScalar()) == 1;
+            }
+        }
+
         public List<string> GetRolId(string RolName)
         {
             List<string> response = new List<string>();

@@ -51,6 +51,10 @@ namespace Origami.Identity.Api.Controllers
         [Route("CreateRol2")]
         public async Task<IActionResult> CreateRol2(PermissonRolesRequest2 model)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminRoles))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar roles." });
+            }
           
             List<string> roleId;
             roleId = _securityData.GetRolId(model.RolName);
@@ -78,6 +82,10 @@ namespace Origami.Identity.Api.Controllers
         [Route("updateRol2")]
         public async Task<IActionResult> updateRol2(PermissonRolesRequest2 model)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminRoles))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar roles." });
+            }
 
             List<string> roleId = new List<string>();
             roleId = _securityData.GetRolIdById(model.RolId);

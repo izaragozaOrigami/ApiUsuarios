@@ -108,6 +108,10 @@ namespace Origami.Identity.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreatePermissonSpecial2([FromBody] PermissonSpecialRequest2 model)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
           //  SecurityData security = new SecurityData();
 
             if (model.PermissonsSpecial.Count > 0)
@@ -129,6 +133,10 @@ namespace Origami.Identity.Api.Controllers
         [HttpPost]
         public IActionResult DelSpecialPermissonExtendedByUser(User user)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
             ResponseBaseDto response = _securityData.DelSpecialPermissonExtendedByUser(user.Id, 1);
 
             return Ok(response);
@@ -139,6 +147,10 @@ namespace Origami.Identity.Api.Controllers
         [HttpPost]
         public IActionResult DelSpecialPermissonExtendedByUserAction(PermissonSpecial2 user)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
             ResponseBaseDto response = _securityData.DelSpecialPermissonExtendedByUserAccion(user.UserId, 2, user.IdModulo);
 
             return Ok(response);

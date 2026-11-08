@@ -46,10 +46,16 @@ namespace Origami.Identity.Api.Controllers
             _env = env;
         }
 
-        [AllowAnonymous]
+        [Authorize(Roles = "BasicAuthorization")]
         [HttpPost("Create")]
         public async Task<IActionResult> Create([FromBody] CreateUserBindingModel createUserModel)
         {
+            // Solo quien administra usuarios puede darlos de alta, porque el alta asigna roles.
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
+
             IList<string> accessibilitys = new List<string>();
 
             foreach (CBU cBU in createUserModel.Accessibility.CBU)
@@ -328,11 +334,16 @@ namespace Origami.Identity.Api.Controllers
         /// </summary>
         /// <param name="User">New User parameters</param>
         /// <returns>Update an User</returns>
-        //  [Authorize(Roles = "SuperAdmin,Administrador")]
+        [Authorize(Roles = "BasicAuthorization")]
         [Route("UpdateUser")]
         [HttpPost]
         public async Task<IActionResult> UpdateUser(UserUpdate request)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
+
             // Crear o obtener el UserManager
             // TODO ASP.NET Identity debe reemplazarse por la identidad de ASP.NET Core. Para obtener más información, consulte https://docs.microsoft.com/aspnet/core/migration/identity.
          //   var userManager = new UserManager<ApplicationUser>(new UserStore<ApplicationUser>(new ApplicationDbContext()));
@@ -492,6 +503,10 @@ namespace Origami.Identity.Api.Controllers
         [Route("updateAccesibility")]
         public async Task<IActionResult> updateAccesibility(RequestAccessibilityUpdate requestAccessibilityUpdate)
         {
+            if (!_securityData.UserHasModuleAccess(User, SecurityData.NodosAdminUsuarios))
+            {
+                return StatusCode(403, new[] { "No tienes permiso para administrar usuarios." });
+            }
 
             if (!ModelState.IsValid)
             {
