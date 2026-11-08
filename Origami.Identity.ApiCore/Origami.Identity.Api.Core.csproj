@@ -56,4 +56,8 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Secretos para correr en local: el archivo lo ignora git y nunca se publica. -->
+    <Content Update="appsettings.Local.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 </Project>

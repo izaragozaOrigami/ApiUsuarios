@@ -13,6 +13,12 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Secretos para correr en local: archivo ignorado por git y que no se publica. En Azure no
+// existe y los valores vienen de los App Settings, que se vuelven a cargar al final para ganar.
+builder.Configuration
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
+
 // Consolidación de blobs (dev): inicializa el resolver con la config (Storage:ConsolidatedContainer/BlobBaseUri).
 Origami.Identity.Api.Core.Infrastructure.UserStorageResolver.Init(builder.Configuration);
 

@@ -51,3 +51,6 @@ _ReSharper*/
 ################################################################################
 
 publish/
+
+# Secretos para correr en local (ver Program.cs / GetConnections.cs)
+appsettings.Local.json
