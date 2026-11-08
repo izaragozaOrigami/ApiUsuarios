@@ -3109,13 +3109,11 @@
             {
 
 
-                string query = "SELECT [Id], [RoleId] FROM [dbo].[AspNetRoles] WHERE Name = '" + RolName + "'";
-
-
+                // El nombre del rol llega del cliente: va como parámetro, nunca concatenado.
+                string query = "SELECT [Id], [RoleId] FROM [dbo].[AspNetRoles] WHERE Name = @RolName";
 
                 SqlCommand command = new SqlCommand(query, connection);
-                // Asegúrate de cambiar "@valor" por el nombre real de tu parámetro y asignar el valor correctamente
-                //  command.Parameters.AddWithValue("@valor", RolName);
+                command.Parameters.Add("@RolName", SqlDbType.NVarChar, 450).Value = RolName ?? string.Empty;
 
                 try
                 {
@@ -3394,13 +3392,11 @@
             {
 
 
-                string query = "SELECT [Id], [RoleId] FROM [dbo].[AspNetRoles] WHERE [Id] = '" + RolId + "'";
-
-
+                // El id del rol llega del cliente: va como parámetro, nunca concatenado.
+                string query = "SELECT [Id], [RoleId] FROM [dbo].[AspNetRoles] WHERE [Id] = @RolId";
 
                 SqlCommand command = new SqlCommand(query, connection);
-                // Asegúrate de cambiar "@valor" por el nombre real de tu parámetro y asignar el valor correctamente
-                //  command.Parameters.AddWithValue("@valor", RolName);
+                command.Parameters.Add("@RolId", SqlDbType.NVarChar, 450).Value = RolId ?? string.Empty;
 
                 try
                 {
