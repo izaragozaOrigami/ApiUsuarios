@@ -15,6 +15,14 @@ namespace Origami.Identity.Api.Core.Services
 
         public async Task SendEmailAsync(string to, string subject, string body)
         {
+            // Email:Provider = "Graph" envía por Microsoft Graph; cualquier otro valor (o vacío) sigue por SMTP.
+            // Así se regresa a SMTP cambiando un App Setting, sin volver a publicar.
+            if (string.Equals(_config["Email:Provider"], "Graph", StringComparison.OrdinalIgnoreCase))
+            {
+                await GraphMailClient.EnviarAsync(GraphMailClient.LeerConfiguracion(_config), to, subject, body);
+                return;
+            }
+
             var email = new MimeMessage();
             email.From.Add(MailboxAddress.Parse(_config["Email:From"]));
             email.To.Add(MailboxAddress.Parse(to));

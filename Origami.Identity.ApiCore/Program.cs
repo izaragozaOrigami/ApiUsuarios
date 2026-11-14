@@ -98,6 +98,10 @@ builder.Services.AddScoped<SecurityData>();
 
 builder.Services.AddScoped<IEmailService, EmailService>();
 
+// Inicio de sesión con Microsoft (SSO): singleton para que las llaves públicas de Entra ID se
+// descarguen una vez y se reutilicen. Sin Sso:TenantId/Sso:ClientId queda apagado.
+builder.Services.AddSingleton<Origami.Identity.Api.Core.Infrastructure.Security.EntraIdTokenValidator>();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo

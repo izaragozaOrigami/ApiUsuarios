@@ -14,6 +14,7 @@ using System.Security.Claims;
 using System.Text;
 using Azure.Storage.Blobs;
 using LoginRequest = Origami.Identity.Api.Core.Infrastructure.LoginRequest;
+using Origami.Identity.Api.Core.Infrastructure.Security;
 using Origami.Identity.Api.Core.Infrastructure.Security.Request;
 using Origami.Identity.Api.Core.Infrastructure.Security.Response;
 
@@ -29,6 +30,7 @@ namespace Origami.Identity.Api.Controllers
         private readonly SecurityData _securityData;
         private readonly IEmailService _emailService;
         private readonly IWebHostEnvironment _env;
+        private readonly EntraIdTokenValidator _entraIdTokenValidator;
 
         public AccountsController(
             UserManager<ApplicationUser> userManager,
@@ -36,7 +38,8 @@ namespace Origami.Identity.Api.Controllers
             IConfiguration configuration,
             SecurityData securityData,
             IEmailService emailService,
-            IWebHostEnvironment env)
+            IWebHostEnvironment env,
+            EntraIdTokenValidator entraIdTokenValidator)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -44,6 +47,7 @@ namespace Origami.Identity.Api.Controllers
             _securityData = securityData;
             _emailService = emailService;
             _env = env;
+            _entraIdTokenValidator = entraIdTokenValidator;
         }
 
         // Un usuario está deshabilitado mientras LockoutEnd tenga una fecha futura. No se usa
@@ -220,80 +224,115 @@ namespace Origami.Identity.Api.Controllers
                 if (EstaDeshabilitado(user))
                     return Unauthorized(new { disabled = true, message = "Tu usuario está deshabilitado. Pide a un administrador que lo habilite." });
 
-                // Claims
-                var claims = new List<Claim>
+                LoginResponse response = await ConstruirSesionAsync(user);
+                return Ok(response);
+            }
+            catch
+            {
+                return Unauthorized("Credenciales Invalidas");
+            }
+        }
+
+        // =========================
+        // LOGIN CON MICROSOFT (SSO)
+        // =========================
+        // El front hace el inicio de sesión con Microsoft Entra ID y manda aquí el id_token. Si es válido,
+        // se entrega la MISMA sesión de Flota que el login con contraseña: mismos roles, permisos y
+        // accesibilidad. Solo entra quien ya existe en Flota con ese correo, está activo y tiene
+        // accesibilidad; no hay alta automática.
+        [AllowAnonymous]
+        [HttpPost("loginMicrosoft")]
+        public async Task<IActionResult> LoginMicrosoft([FromBody] MicrosoftLoginRequest model, CancellationToken cancellationToken)
+        {
+            if (!_entraIdTokenValidator.Habilitado)
+                return Unauthorized(new { message = "El inicio de sesión con Microsoft no está habilitado." });
+
+            try
+            {
+                EntraIdentity? identidad = await _entraIdTokenValidator.ValidarAsync(model?.IdToken, cancellationToken);
+                if (identidad == null)
+                    return Unauthorized(new { message = "No se pudo validar tu cuenta de Microsoft. Intenta de nuevo." });
+
+                ApplicationUser? user = await _userManager.FindByEmailAsync(identidad.Email);
+                if (user == null)
+                    return Unauthorized(new { message = "Tu cuenta de Microsoft no está registrada en Flota. Pide a un administrador que te dé de alta con ese correo." });
+
+                if (EstaDeshabilitado(user))
+                    return Unauthorized(new { disabled = true, message = "Tu usuario está deshabilitado. Pide a un administrador que lo habilite." });
+
+                LoginResponse response = await ConstruirSesionAsync(user);
+                if (response.CBUs == null || response.CBUs.Count == 0)
+                    return Unauthorized(new { message = "Tu usuario no tiene accesibilidad asignada. Pide a un administrador que te la asigne." });
+
+                return Ok(response);
+            }
+            catch
+            {
+                return Unauthorized(new { message = "No se pudo iniciar sesión con Microsoft. Intenta de nuevo." });
+            }
+        }
+
+        // Arma la sesión de Flota (JWT + roles, accesibilidad, módulos y permisos). La comparten el login
+        // con contraseña y el de Microsoft para que ambos entreguen exactamente lo mismo.
+        private async Task<LoginResponse> ConstruirSesionAsync(ApplicationUser user)
+        {
+            // Claims
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
                 new Claim(ClaimTypes.Name, user.UserName),
                 new Claim(ClaimTypes.Email, user.Email)
             };
 
-                var _roles = await _userManager.GetRolesAsync(user);
-                claims.AddRange(_roles.Select(r => new Claim(ClaimTypes.Role, r)));
+            var _roles = await _userManager.GetRolesAsync(user);
+            claims.AddRange(_roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
-                // JWT
-                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-                var token = new JwtSecurityToken(
-                    issuer: _configuration["Jwt:Issuer"],
-                    audience: _configuration["Jwt:Audience"],
-                    claims: claims,
-                    expires: DateTime.UtcNow.AddHours(double.Parse(_configuration["Jwt:ExpireHours"])),
-                    signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
-                );
+            // JWT
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(double.Parse(_configuration["Jwt:ExpireHours"])),
+                signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+            );
 
-                List<Role> roles = new List<Role>();
-                List<CBU> cbus = new List<CBU>();
-                List<Modulos> modules = new List<Modulos>();
+            List<Role> roles = new List<Role>();
+            List<CBU> cbus = new List<CBU>();
+            List<Modulos> modules = new List<Modulos>();
 
-                PermissonAccess permissonAccess = new PermissonAccess();
-                // SecurityData securityData = new SecurityData();
-                permissonAccess.perAccess = _securityData.ConstruirEstructuraJerarquica(user.Id);
-                roles = _securityData.GetRolesXId(user.Id);
-                cbus = _securityData.GetUserAccesibility(user.Id);
-                List<AreaAccess> areas = _securityData.GetUserAreaAccesibility(user.Id, true, out bool areaRestricted);
-                modules = _securityData.GetUserModulo(user.Id);
-                var tokenHandler = new JwtSecurityTokenHandler();
-                string token2 = tokenHandler.WriteToken(token);
+            PermissonAccess permissonAccess = new PermissonAccess();
+            permissonAccess.perAccess = _securityData.ConstruirEstructuraJerarquica(user.Id);
+            roles = _securityData.GetRolesXId(user.Id);
+            cbus = _securityData.GetUserAccesibility(user.Id);
+            List<AreaAccess> areas = _securityData.GetUserAreaAccesibility(user.Id, true, out bool areaRestricted);
+            modules = _securityData.GetUserModulo(user.Id);
+            var tokenHandler = new JwtSecurityTokenHandler();
+            string token2 = tokenHandler.WriteToken(token);
 
-                LoginResponse response = new LoginResponse()
-                {
-                    //Avatar = "https://sistemascarreteros.s3-us-west-2.amazonaws.com/assets/avatar2.jpg",
-                    Created = DateTime.Now.ToString(),
-                    Email = user.Email,
-                    Fullname = user.FirstName + " " + user.LastName,
-                    Id = user.Id,
-                    EmailConfirmed = user.EmailConfirmed,
-                    Phone = user.PhoneNumber,
-                    PhoneExtension = user.PhoneExtension,
-                    Picture = UserStorageResolver.ResolveUrl(user.PhotoURL),
-                    Roles = roles,
-                    CBUs = cbus,
-                    AreaRestricted = areaRestricted,
-                    Areas = areas,
-                    Updated = DateTime.Now.ToString(),
-                    Token = token2,
-                    TimeExpirationToken = token.ValidTo.ToLocalTime(),
-                    PositionId = user.PositionId.ToString(),
-                    NoEmployee = user.NoEmployee,
-                    UserName = user.UserName,
-                    Modules = modules,
-                    permissonAccess = permissonAccess,
-                };
-
-                if (user != null)
-                {
-                    return Ok(response);
-                }
-                else
-                { return Unauthorized("Credenciales Invalidas"); }
-            }
-            catch
+            return new LoginResponse()
             {
-                return Unauthorized("Credenciales Invalidas");
-            }
-
-           
-
+                Created = DateTime.Now.ToString(),
+                Email = user.Email,
+                Fullname = user.FirstName + " " + user.LastName,
+                Id = user.Id,
+                EmailConfirmed = user.EmailConfirmed,
+                Phone = user.PhoneNumber,
+                PhoneExtension = user.PhoneExtension,
+                Picture = UserStorageResolver.ResolveUrl(user.PhotoURL),
+                Roles = roles,
+                CBUs = cbus,
+                AreaRestricted = areaRestricted,
+                Areas = areas,
+                Updated = DateTime.Now.ToString(),
+                Token = token2,
+                TimeExpirationToken = token.ValidTo.ToLocalTime(),
+                PositionId = user.PositionId.ToString(),
+                NoEmployee = user.NoEmployee,
+                UserName = user.UserName,
+                Modules = modules,
+                permissonAccess = permissonAccess,
+            };
         }
 
         [Authorize(Roles = "SuperAdmin,Administrador")]
