@@ -54,8 +54,70 @@ namespace Origami.Identity.Api.Controllers
         // LockoutEnabled porque la edición del usuario lo reescribe en cada guardado.
         private static readonly DateTimeOffset DeshabilitadoHasta = new DateTimeOffset(9999, 12, 31, 0, 0, 0, TimeSpan.Zero);
 
+        // El bloqueo temporal por intentos fallidos usa la misma columna, pero solo unos minutos hacia
+        // adelante. Se distinguen por la fecha: de este umbral en adelante es el deshabilitado.
+        private static readonly DateTimeOffset UmbralDeshabilitado = new DateTimeOffset(9000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
         private static bool EstaDeshabilitado(ApplicationUser user) =>
-            user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTimeOffset.UtcNow;
+            user.LockoutEnd.HasValue && user.LockoutEnd.Value >= UmbralDeshabilitado;
+
+        private static bool EstaBloqueadoTemporalmente(ApplicationUser user) =>
+            user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTimeOffset.UtcNow && !EstaDeshabilitado(user);
+
+        // Límite de intentos del login con contraseña: tras N contraseñas incorrectas seguidas, la cuenta
+        // se bloquea unos minutos. Configurable con Seguridad:MaxIntentosFallidos y Seguridad:MinutosBloqueo.
+        private int MaxIntentosFallidos =>
+            int.TryParse(_configuration["Seguridad:MaxIntentosFallidos"], out int n) && n > 0 ? n : 5;
+
+        private TimeSpan DuracionBloqueo =>
+            TimeSpan.FromMinutes(int.TryParse(_configuration["Seguridad:MinutosBloqueo"], out int m) && m > 0 ? m : 15);
+
+        private static object RespuestaBloqueo(ApplicationUser user)
+        {
+            int minutos = Math.Max(1, (int)Math.Ceiling((user.LockoutEnd!.Value - DateTimeOffset.UtcNow).TotalMinutes));
+            return new
+            {
+                locked = true,
+                message = $"Tu usuario quedó bloqueado por varios intentos fallidos. Intenta de nuevo en {minutos} {(minutos == 1 ? "minuto" : "minutos")} o recupera tu contraseña."
+            };
+        }
+
+        private async Task RegistrarIntentoFallidoAsync(ApplicationUser user)
+        {
+            // Nunca se pisa el deshabilitado que puso un administrador.
+            if (EstaDeshabilitado(user))
+                return;
+
+            user.AccessFailedCount++;
+            if (user.AccessFailedCount >= MaxIntentosFallidos)
+            {
+                user.LockoutEnd = DateTimeOffset.UtcNow.Add(DuracionBloqueo);
+                user.AccessFailedCount = 0;
+            }
+            // Si dos intentos chocan al guardar, uno simplemente no cuenta; no se rompe el login.
+            await _userManager.UpdateAsync(user);
+        }
+
+        // Tras entrar bien (o cambiar la contraseña) se limpian el contador y un bloqueo temporal ya vencido.
+        private async Task ReiniciarIntentosFallidosAsync(ApplicationUser user)
+        {
+            bool hayBloqueoTemporal = user.LockoutEnd.HasValue && !EstaDeshabilitado(user);
+            if (user.AccessFailedCount == 0 && !hayBloqueoTemporal)
+                return;
+
+            user.AccessFailedCount = 0;
+            if (hayBloqueoTemporal)
+                user.LockoutEnd = null;
+            try
+            {
+                await _userManager.UpdateAsync(user);
+            }
+            catch (Exception ex)
+            {
+                // Que no limpiar el contador nunca impida entrar.
+                Console.WriteLine($"No se pudo reiniciar el contador de intentos: {ex.Message}");
+            }
+        }
 
         [Authorize(Roles = "BasicAuthorization")]
         [HttpPost("Create")]
@@ -216,13 +278,24 @@ namespace Origami.Identity.Api.Controllers
                 if (user == null)
                     return Unauthorized();
 
+                // Mientras dure el bloqueo no se revisa la contraseña: así no se puede seguir probando.
+                if (EstaBloqueadoTemporalmente(user))
+                    return Unauthorized(RespuestaBloqueo(user));
+
                 var passwordValid = await _userManager.CheckPasswordAsync(user, model.password);
                 if (!passwordValid)
+                {
+                    await RegistrarIntentoFallidoAsync(user);
+                    if (EstaBloqueadoTemporalmente(user))
+                        return Unauthorized(RespuestaBloqueo(user));
                     return Unauthorized();
+                }
 
                 // Se revisa después de la contraseña para no revelar el estado a quien no la sabe.
                 if (EstaDeshabilitado(user))
                     return Unauthorized(new { disabled = true, message = "Tu usuario está deshabilitado. Pide a un administrador que lo habilite." });
+
+                await ReiniciarIntentosFallidosAsync(user);
 
                 LoginResponse response = await ConstruirSesionAsync(user);
                 return Ok(response);
@@ -765,6 +838,9 @@ namespace Origami.Identity.Api.Controllers
                     {
                         return BadRequest(result);
                     }
+
+                    // Quien recuperó su contraseña ya demostró ser el dueño: se quita el bloqueo por intentos.
+                    await ReiniciarIntentosFallidosAsync(user);
                 }
                 catch (DbUpdateException ex)
                 {
